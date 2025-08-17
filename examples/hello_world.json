@@ -1,0 +1,102 @@
+{
+  "nodes": {
+    "greet": {
+      "type": "mcp_agent",
+      "adapter": "mcp_use",
+      "config": {
+        "agent_config": {
+          "mcpServers": {
+            "simple": {
+              "command": "echo",
+              "args": ["Hello from MCP agent!"]
+            }
+          }
+        },
+        "tool": "greeting",
+        "max_steps": 1
+      }
+    },
+    "process": {
+      "type": "mcp_agent",
+      "adapter": "mcp_use", 
+      "config": {
+        "agent_config": {
+          "mcpServers": {
+            "processor": {
+              "command": "echo",
+              "args": ["Processing input..."]
+            }
+          }
+        },
+        "tool": "process",
+        "max_steps": 2
+      }
+    },
+    "analyze": {
+      "type": "mcp_agent",
+      "adapter": "mcp_use",
+      "config": {
+        "agent_config": {
+          "mcpServers": {
+            "analyzer": {
+              "command": "echo", 
+              "args": ["Analyzing data..."]
+            }
+          }
+        },
+        "tool": "analyze",
+        "max_steps": 1
+      }
+    },
+    "combine": {
+      "type": "composite",
+      "adapter": "mcp_use",
+      "config": {
+        "agent_config": {
+          "mcpServers": {
+            "combiner": {
+              "command": "echo",
+              "args": ["Combining results..."]
+            }
+          }
+        },
+        "tool": "combine",
+        "max_steps": 1,
+        "max_concurrency": 2
+      }
+    },
+    "summarize": {
+      "type": "mcp_agent",
+      "adapter": "mcp_use",
+      "config": {
+        "agent_config": {
+          "mcpServers": {
+            "summarizer": {
+              "command": "echo",
+              "args": ["Creating final summary..."]
+            }
+          }
+        },
+        "tool": "summarize",
+        "max_steps": 1
+      }
+    }
+  },
+  "edges": {
+    "greet": ["process", "analyze"],
+    "process": ["combine"],
+    "analyze": ["combine"],
+    "combine": ["summarize"]
+  },
+  "ctx": {
+    "user_name": "Agent Orchestra User",
+    "task": "Demonstrate 5-node workflow",
+    "timestamp": "2025-01-01T00:00:00Z"
+  },
+  "metadata": {
+    "name": "Hello World Demo",
+    "description": "A simple 5-node workflow demonstrating Agent Orchestra capabilities",
+    "version": "1.0",
+    "author": "Agent Orchestra Team"
+  }
+}
