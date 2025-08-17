@@ -1,6 +1,6 @@
 # 🎭 Agent Orchestra
 
-**Universal Multi-Agent Orchestrator** - The easiest way to create and orchestrate multi-agent fleets using MCP-USE.
+**Universal Multi-Agent Orchestrator** - The easiest way to create and orchestrate full multi-agent fleets using MCP-USE.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -21,11 +21,13 @@
 ### Installation
 
 **From GitHub (recommended for now):**
+
 ```bash
 pip install git+https://github.com/your-username/agent-orchestra.git
 ```
 
 **For development:**
+
 ```bash
 git clone https://github.com/your-username/agent-orchestra.git
 cd agent-orchestra
@@ -33,6 +35,7 @@ pip install -e .[dev]
 ```
 
 **From PyPI (coming soon):**
+
 ```bash
 pip install agent-orchestra
 ```
@@ -107,7 +110,7 @@ asyncio.run(main())
 Agent Orchestra uses JSON graphs to define workflows:
 
 - **Nodes**: Individual agents or processing units
-- **Edges**: Dependencies between nodes  
+- **Edges**: Dependencies between nodes
 - **Context**: Initial data and configuration
 - **Metadata**: Graph information and settings
 
@@ -129,7 +132,7 @@ Adapters provide clean interfaces to different agent backends:
 All executions generate structured events:
 
 - **Run lifecycle**: start, end, error
-- **Node lifecycle**: schedule, start, complete, error  
+- **Node lifecycle**: schedule, start, complete, error
 - **Policy events**: budget exceeded, HITL required
 - **System events**: checkpoints, tool usage
 
