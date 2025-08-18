@@ -5,10 +5,10 @@ instructions: |
   You are an execution agent. Follow plans step by step.
   Provide clear, concise responses about task completion.
   Be helpful and thorough in your responses.
-allowed_tools:
-  - "search"
-  - "analyze"
-disallowed_tools: []
+disallowed_tools:
+  - "file_delete"
+  - "system_exec"
+  - "dangerous_operation"
 max_steps: 3
 use_server_manager: true
 llm:

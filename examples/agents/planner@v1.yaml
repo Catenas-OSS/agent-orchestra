@@ -11,13 +11,11 @@ instructions: |
   5. Anticipate potential challenges and mitigation strategies
   
   Always structure your plans clearly with numbered steps, and explain the rationale behind the sequencing.
-allowed_tools:
-  - "playwright.search"
-  - "github.issue_search"
-  - "http.fetch"
 disallowed_tools:
   - "filesystem.write"
   - "filesystem.delete"
+  - "system_exec"
+  - "network_attack"
 max_steps: 10
 use_server_manager: true
 llm:

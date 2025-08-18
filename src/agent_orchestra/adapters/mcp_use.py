@@ -216,16 +216,12 @@ class MCPUseAdapter(BaseAdapter):
         instructions = agent_spec.get("instructions", "")
         use_server_manager = agent_spec.get("use_server_manager", True)
         disallowed_tools = agent_spec.get("disallowed_tools", [])
-        allowed_tools = agent_spec.get("allowed_tools", [])
         
         # Get tools config digest from meta (orchestrator calculates this)
         tools_digest = meta.get("tools_digest", "no_tools")
         
         # Create comprehensive cache key for agent caching
-        # Include tool access control in cache key (allow-list precedence)
-        if allowed_tools is not None:
-            tool_control_hash = f"allowed_{hash(tuple(sorted(allowed_tools)))}"
-        elif disallowed_tools:
+        if disallowed_tools:
             tool_control_hash = f"disallowed_{hash(tuple(sorted(disallowed_tools)))}"
         else:
             tool_control_hash = "no_tool_control"
@@ -295,19 +291,7 @@ class MCPUseAdapter(BaseAdapter):
         # Always create fresh MCPAgent (no conversation state sharing)
         max_steps = agent_spec.get("max_steps", 8)
         disallowed_tools = agent_spec.get("disallowed_tools")
-        allowed_tools = agent_spec.get("allowed_tools")
         use_server_manager = agent_spec.get("use_server_manager", True)
-        
-        # Apply tool access control with allow-list precedence
-        # If allowed_tools is specified, it takes precedence over disallowed_tools
-        if allowed_tools is not None:
-            # Use allowed_tools only (ignore disallowed_tools)
-            final_disallowed_tools = None
-            final_allowed_tools = allowed_tools
-        else:
-            # Use disallowed_tools if no allowed_tools specified
-            final_disallowed_tools = disallowed_tools
-            final_allowed_tools = None
         
         # Prepare instruction parameters for MCPAgent
         mcp_agent_kwargs = {
@@ -317,21 +301,9 @@ class MCPUseAdapter(BaseAdapter):
             "use_server_manager": use_server_manager
         }
         
-        # Add tool filtering parameters (check what mcp-use supports)
-        if final_allowed_tools is not None:
-            # Check if MCPAgent supports allowed_tools parameter
-            import inspect
-            mcp_agent_params = inspect.signature(MCPAgent.__init__).parameters
-            if "allowed_tools" in mcp_agent_params:
-                mcp_agent_kwargs["allowed_tools"] = final_allowed_tools
-            else:
-                # Fallback: use disallowed_tools by inverting allowed_tools
-                # This would require knowing all available tools to compute the difference
-                # For now, emit a warning and use disallowed_tools=None
-                print(f"⚠️  WARNING: MCPAgent doesn't support allowed_tools parameter. Tool filtering may be incomplete.")
-                mcp_agent_kwargs["disallowed_tools"] = None
-        elif final_disallowed_tools is not None:
-            mcp_agent_kwargs["disallowed_tools"] = final_disallowed_tools
+        # Pass disallowed_tools to MCPAgent (mcp-use 1.3.10+ supports this)
+        if disallowed_tools is not None:
+            mcp_agent_kwargs["disallowed_tools"] = disallowed_tools
         
         # Pass instructions via MCPAgent parameters (not prompt wrapper)
         if instructions:
@@ -355,16 +327,10 @@ class MCPUseAdapter(BaseAdapter):
         # Emit AGENT_INIT event
         if self._event_emitter:
             # Prepare tool control info for event payload
-            tool_control_info = {}
-            if final_allowed_tools is not None:
-                tool_control_info = {
-                    "tool_control_type": "allowed",
-                    "tool_control_count": len(final_allowed_tools)
-                }
-            elif final_disallowed_tools:
+            if disallowed_tools:
                 tool_control_info = {
                     "tool_control_type": "disallowed", 
-                    "tool_control_count": len(final_disallowed_tools)
+                    "tool_control_count": len(disallowed_tools)
                 }
             else:
                 tool_control_info = {

@@ -1,12 +1,12 @@
 {
   "agents": [
     {
-      "allowed_tools": [
-        "search",
-        "analyze"
-      ],
       "description": "Task execution agent",
-      "disallowed_tools": [],
+      "disallowed_tools": [
+        "file_delete",
+        "system_exec",
+        "dangerous_operation"
+      ],
       "id": "executor@v1",
       "instructions": "You are an execution agent. Follow plans step by step.\nProvide clear, concise responses about task completion.\nBe helpful and thorough in your responses.",
       "llm": {
@@ -49,15 +49,12 @@
       "use_server_manager": true
     },
     {
-      "allowed_tools": [
-        "playwright.search",
-        "github.issue_search",
-        "http.fetch"
-      ],
       "description": "Task decomposition and planning agent",
       "disallowed_tools": [
         "filesystem.write",
-        "filesystem.delete"
+        "filesystem.delete",
+        "system_exec",
+        "network_attack"
       ],
       "id": "planner@v1",
       "instructions": "You are a planning agent specialized in task decomposition. Your role is to:\n\n1. Break down complex tasks into clear, actionable steps\n2. Identify dependencies between sub-tasks\n3. Suggest appropriate tools and resources for each step\n4. Provide realistic time estimates\n5. Anticipate potential challenges and mitigation strategies\n\nAlways structure your plans clearly with numbered steps, and explain the rationale behind the sequencing.",
@@ -105,6 +102,29 @@
       "id": "restricted@v1",
       "instructions": "You are a restricted agent with limited tool access.",
       "max_steps": 5,
+      "model": "openai:gpt-4o-mini",
+      "use_server_manager": true
+    },
+    {
+      "description": "Security-conscious agent with tool restrictions",
+      "disallowed_tools": [
+        "file_delete",
+        "system_exec",
+        "system_reboot",
+        "network_scan"
+      ],
+      "id": "secure@v1",
+      "instructions": "You are a security-conscious assistant. You help users with tasks while being\ncareful about system security. You cannot access dangerous system functions.",
+      "llm": {
+        "max_tokens": 1000,
+        "temperature": 0.2
+      },
+      "max_steps": 5,
+      "metadata": {
+        "author": "agent-orchestra",
+        "category": "security",
+        "version": "1.0"
+      },
       "model": "openai:gpt-4o-mini",
       "use_server_manager": true
     },
