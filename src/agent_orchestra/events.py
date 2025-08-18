@@ -43,6 +43,13 @@ class EventType(Enum):
     ADAPTER_CALL = "adapter.call"
     ADAPTER_RESULT = "adapter.result"
 
+    # Client/Server lifecycle events
+    CLIENT_START = "client.start"
+    CLIENT_STOP = "client.stop"
+    SERVER_START = "server.start"
+    SERVER_READY = "server.ready"
+    SERVER_ERROR = "server.error"
+
     # Custom events
     CUSTOM = "custom"
 

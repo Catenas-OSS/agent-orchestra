@@ -13,6 +13,7 @@ import click
 from agent_orchestra import Orchestrator, __version__
 from agent_orchestra.events import EventType, read_events_from_jsonl
 from agent_orchestra.policy import HITLManager
+from agent_orchestra.tools_loader import ToolsLoaderError, validate_tools_config
 
 
 @click.group()
@@ -26,6 +27,8 @@ def main() -> None:
 @click.argument("graph_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--run-id", help="Custom run ID")
 @click.option("--context", "-c", help="Additional context as JSON string")
+@click.option("--tools", type=click.Path(exists=True, path_type=Path),
+              help="Tools configuration file (.yaml/.yml/.json)")
 @click.option("--checkpoint-dir", type=click.Path(path_type=Path),
               default="./checkpoints", help="Checkpoint directory")
 @click.option("--event-dir", type=click.Path(path_type=Path),
@@ -36,6 +39,7 @@ def run(
     graph_file: Path,
     run_id: str | None,
     context: str | None,
+    tools: Path | None,
     checkpoint_dir: Path,
     event_dir: Path,
     max_concurrency: int
@@ -43,6 +47,16 @@ def run(
     """Run a graph from a JSON specification file."""
 
     async def _run() -> None:
+        # Validate tools config if provided
+        if tools:
+            try:
+                click.echo(f"Validating tools config: {tools}")
+                validate_tools_config(tools)
+                click.echo("✅ Tools config validation passed")
+            except ToolsLoaderError as e:
+                click.echo(f"❌ Tools config validation failed: {e}", err=True)
+                sys.exit(1)
+
         # Parse additional context
         ctx = {}
         if context:
@@ -87,6 +101,58 @@ def run(
             sys.exit(1)
 
     asyncio.run(_run())
+
+
+@main.command()
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+def validate(files: tuple[Path, ...]) -> None:
+    """Validate configuration files (tools.yaml, graph.json, etc.)."""
+
+    exit_code = 0
+
+    for file_path in files:
+        click.echo(f"Validating {file_path}")
+
+        try:
+            if file_path.suffix.lower() in {'.yaml', '.yml'}:
+                # YAML file - try as tools config first
+                try:
+                    validate_tools_config(file_path)
+                    click.echo(f"✅ {file_path}: Valid tools configuration")
+                    continue
+                except ToolsLoaderError as e:
+                    click.echo(f"❌ {file_path}: Invalid tools configuration: {e}", err=True)
+                    exit_code = 1
+                    continue
+            elif file_path.suffix.lower() == '.json':
+                # JSON file - try as tools config first, then generic JSON
+                try:
+                    validate_tools_config(file_path)
+                    click.echo(f"✅ {file_path}: Valid tools configuration")
+                    continue
+                except ToolsLoaderError:
+                    # Not a tools config, try as generic JSON
+                    try:
+                        with open(file_path) as f:
+                            json.load(f)
+                        click.echo(f"✅ {file_path}: Valid JSON")
+                    except json.JSONDecodeError as e:
+                        click.echo(f"❌ {file_path}: Invalid JSON: {e}", err=True)
+                        exit_code = 1
+            else:
+                click.echo(f"⚠️  {file_path}: Unknown file type, skipping validation")
+
+        except ToolsLoaderError as e:
+            click.echo(f"❌ {file_path}: {e}", err=True)
+            exit_code = 1
+        except Exception as e:
+            click.echo(f"❌ {file_path}: Validation error: {e}", err=True)
+            exit_code = 1
+
+    if exit_code == 0:
+        click.echo("✅ All files validated successfully")
+    else:
+        sys.exit(exit_code)
 
 
 @main.command()
