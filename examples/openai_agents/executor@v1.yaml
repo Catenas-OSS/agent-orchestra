@@ -1,0 +1,15 @@
+id: "executor@v1"
+model: "openai:gpt-4o-mini"
+description: "Task execution agent (OpenAI only)"
+instructions: |
+  You are an execution agent. Follow plans step by step.
+  Provide clear, concise responses about task completion.
+allowed_tools:
+  - "search"
+  - "analyze"
+disallowed_tools: []
+max_steps: 3
+use_server_manager: false
+llm:
+  temperature: 0.2
+  max_tokens: 800

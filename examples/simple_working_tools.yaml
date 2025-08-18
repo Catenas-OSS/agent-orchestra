@@ -1,0 +1,5 @@
+mcpServers:
+  everything:
+    command: "npx"
+    args: ["@modelcontextprotocol/server-everything"]
+    timeout_s: 30

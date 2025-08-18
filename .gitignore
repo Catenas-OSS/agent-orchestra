@@ -125,7 +125,11 @@ checkpoints/
 events/
 demo_checkpoints/
 demo_events/
+test_checkpoints/
+test_events/
 example_graph.json
+agents.json  # Generated canonical agents file
+test_*.py    # Test scripts
 
 # macOS
 .DS_Store

@@ -7,7 +7,12 @@
 
 ## ✨ Features
 
-- **🔌 MCP-USE Integration**: Seamless integration with [mcp-use](https://github.com/mcp-use/mcp-use) for agent management
+- **🔌 Full MCP-USE Integration**: Complete integration with [mcp-use](https://github.com/mcp-use/mcp-use) including:
+  - **🌐 All Transport Types**: STDIO, HTTP, and SSE support
+  - **🧠 Server Manager**: Dynamic tool discovery with semantic search
+  - **🎯 Tool Access Control**: Allow/disallow lists with precedence rules
+  - **⚡ Streaming Support**: Real-time execution with `agent.astream()`
+  - **🏥 Health Checks**: Configurable readiness probing and timeouts
 - **📊 DAG Execution**: Async directed acyclic graph execution with topological sorting
 - **🔄 Deterministic Replay**: Full checkpoint and replay capability for debugging
 - **💰 Budget Management**: Token, cost, and time budgets with automatic limits
@@ -42,50 +47,22 @@ pip install agent-orchestra
 
 ### Hello World Example
 
-1. **Create a graph specification** (`hello_world.json`):
-
-```json
-{
-  "nodes": {
-    "greet": {
-      "type": "mcp_agent",
-      "adapter": "mcp_use",
-      "config": {
-        "agent_config": {
-          "mcpServers": {
-            "browser": {
-              "command": "npx",
-              "args": ["@playwright/mcp@latest"]
-            }
-          }
-        },
-        "tool": "greeting",
-        "max_steps": 5
-      }
-    },
-    "analyze": {
-      "type": "mcp_agent",
-      "adapter": "mcp_use",
-      "config": {
-        "agent_config": "{}",
-        "tool": "analyze",
-        "max_steps": 3
-      }
-    }
-  },
-  "edges": {
-    "greet": ["analyze"]
-  },
-  "ctx": {
-    "message": "Hello, Agent Orchestra!"
-  }
-}
-```
-
-2. **Run with CLI**:
+1. **Set up your environment**:
 
 ```bash
-catenas run hello_world.json
+# Install with mcp-use support
+pip install "agent-orchestra[mcp-use]"
+
+# Set your API key
+export OPENAI_API_KEY="your-key-here"
+```
+
+2. **Run the included example**:
+
+```bash
+python -m agent_orchestra.cli run examples/hello_world.json \
+  --tools examples/simple_working_tools.yaml \
+  --agents examples/agents/
 ```
 
 3. **Or use programmatically**:
@@ -96,11 +73,38 @@ from agent_orchestra import Orchestrator
 
 async def main():
     orchestrator = Orchestrator()
-    result = await orchestrator.run("hello_world.json")
+    result = await orchestrator.run(
+        graph="examples/hello_world.json",
+        tools_file="examples/simple_working_tools.yaml", 
+        agents_path="examples/agents/"
+    )
     print(f"Success: {result.success}")
     print(f"Outputs: {result.outputs}")
 
 asyncio.run(main())
+```
+
+### MCP Transport Examples
+
+**STDIO Transport (most common):**
+```yaml
+# simple_working_tools.yaml
+mcpServers:
+  everything:
+    command: "npx"
+    args: ["@modelcontextprotocol/server-everything"]
+    timeout_s: 30
+```
+
+**HTTP/SSE Transport:**
+```yaml
+# http_tools.yaml
+mcpServers:
+  api_server:
+    url: "https://api.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+    timeout_s: 30
 ```
 
 ## 📚 Core Concepts

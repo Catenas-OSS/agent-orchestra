@@ -4,14 +4,7 @@
       "type": "mcp_agent",
       "adapter": "mcp_use",
       "config": {
-        "agent_config": {
-          "mcpServers": {
-            "simple": {
-              "command": "echo",
-              "args": ["Hello from MCP agent!"]
-            }
-          }
-        },
+        "agent_id": "planner@v1",
         "tool": "greeting",
         "max_steps": 1
       }
@@ -20,14 +13,7 @@
       "type": "mcp_agent",
       "adapter": "mcp_use", 
       "config": {
-        "agent_config": {
-          "mcpServers": {
-            "processor": {
-              "command": "echo",
-              "args": ["Processing input..."]
-            }
-          }
-        },
+        "agent_id": "executor@v1",
         "tool": "process",
         "max_steps": 2
       }
@@ -36,47 +22,26 @@
       "type": "mcp_agent",
       "adapter": "mcp_use",
       "config": {
-        "agent_config": {
-          "mcpServers": {
-            "analyzer": {
-              "command": "echo", 
-              "args": ["Analyzing data..."]
-            }
-          }
-        },
+        "agent_id": "executor@v1",
         "tool": "analyze",
         "max_steps": 1
       }
     },
     "combine": {
-      "type": "composite",
+      "type": "mcp_agent",
       "adapter": "mcp_use",
       "config": {
-        "agent_config": {
-          "mcpServers": {
-            "combiner": {
-              "command": "echo",
-              "args": ["Combining results..."]
-            }
-          }
-        },
+        "agent_id": "planner@v1",
         "tool": "combine",
         "max_steps": 1,
-        "max_concurrency": 2
+        "server": "echo_server"
       }
     },
     "summarize": {
       "type": "mcp_agent",
       "adapter": "mcp_use",
       "config": {
-        "agent_config": {
-          "mcpServers": {
-            "summarizer": {
-              "command": "echo",
-              "args": ["Creating final summary..."]
-            }
-          }
-        },
+        "agent_id": "executor@v1",
         "tool": "summarize",
         "max_steps": 1
       }

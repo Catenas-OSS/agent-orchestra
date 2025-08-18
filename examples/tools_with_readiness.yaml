@@ -1,0 +1,21 @@
+mcpServers:
+  everything:
+    command: "npx"
+    args: ["@modelcontextprotocol/server-everything"]
+    timeout_s: 10  # 10 second readiness check timeout
+
+  slow_server:
+    command: "npx"
+    args: ["@modelcontextprotocol/server-everything"]
+    timeout_s: 30  # 30 second timeout for slower server
+
+  http_server:
+    url: "https://api.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+    timeout_s: 5   # 5 second timeout for HTTP server
+    
+  no_timeout_server:
+    command: "echo"
+    args: ["hello"]
+    # No timeout_s means no readiness check

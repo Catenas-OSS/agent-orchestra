@@ -100,19 +100,30 @@ class MCPAgentNode(Node):
                 payload={"inputs": inputs}
             ))
 
+            # Get pre-resolved agent spec from context (orchestrator resolves it)
+            agent_spec = context.get("resolved_agent_specs", {}).get(self.node_id)
+            if not agent_spec:
+                raise ValueError(f"Agent spec not resolved for node {self.node_id}")
+            
             # Get tool from config
             tool = self.config.get("tool", "general")
+            
+            # Get server pinning from config
+            server_name = self.config.get("server")
 
-            # Call adapter
+            # Call adapter with resolved spec (adapter is now thin)
             result = await self.adapter.call(
-                agent=self.config.get("agent_config", "{}"),
+                agent=agent_spec,
                 tool=tool,
                 inputs=inputs,
                 meta={
                     "trace_id": trace_id,
                     "span_id": span_id,
                     "run_id": context.get("run_id"),
-                    "max_steps": self.config.get("max_steps", 30)
+                    "mcp_client": context.get("mcp_client"),
+                    "llm_factory": context.get("llm_factory"),
+                    "llm_cache": context.get("llm_cache"),
+                    "server_name": server_name
                 }
             )
 

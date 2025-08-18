@@ -1,0 +1,18 @@
+mcpServers:
+  http_server:
+    url: "https://api.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+      Content-Type: "application/json"
+    timeout_s: 30
+
+  sse_server:
+    url: "https://stream.example.com/mcp-sse"
+    headers:
+      X-API-Key: "${SSE_API_KEY}"
+    timeout_s: 45
+
+  mixed_with_stdio:
+    command: "npx"
+    args: ["@modelcontextprotocol/server-everything"]
+    timeout_s: 30

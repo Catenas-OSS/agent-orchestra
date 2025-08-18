@@ -11,6 +11,7 @@ from pathlib import Path
 import click
 
 from agent_orchestra import Orchestrator, __version__
+from agent_orchestra.agents_loader import AgentsLoaderError, validate_agents_config
 from agent_orchestra.events import EventType, read_events_from_jsonl
 from agent_orchestra.policy import HITLManager
 from agent_orchestra.tools_loader import ToolsLoaderError, validate_tools_config
@@ -33,6 +34,8 @@ def main() -> None:
 @click.option("--context", "-c", help="Additional context as JSON string")
 @click.option("--tools", type=click.Path(exists=True, path_type=Path),
               help="Tools configuration file (.yaml/.yml/.json)")
+@click.option("--agents", type=click.Path(exists=True, path_type=Path),
+              help="Agents directory or file (.yaml/.yml/.json)")
 @click.option("--checkpoint-dir", type=click.Path(path_type=Path),
               default="./checkpoints", help="Checkpoint directory")
 @click.option("--event-dir", type=click.Path(path_type=Path),
@@ -44,6 +47,7 @@ def run(
     run_id: str | None,
     context: str | None,
     tools: Path | None,
+    agents: Path | None,
     checkpoint_dir: Path,
     event_dir: Path,
     max_concurrency: int
@@ -77,6 +81,16 @@ def run(
                 click.echo(f"❌ Tools config validation failed: {e}", err=True)
                 sys.exit(1)
 
+        # Validate agents config if provided
+        if agents:
+            try:
+                click.echo(f"Validating agents config: {agents}")
+                validate_agents_config(agents)
+                click.echo("✅ Agents config validation passed")
+            except AgentsLoaderError as e:
+                click.echo(f"❌ Agents config validation failed: {e}", err=True)
+                sys.exit(1)
+
         # Parse additional context
         ctx = {}
         if context:
@@ -93,13 +107,18 @@ def run(
             max_concurrency=max_concurrency
         )
 
+        # Validate graph against agents requirements
+        _validate_graph_with_agents(graph_file, agents)
+        
         # Load and run graph
         try:
             click.echo(f"Loading graph from {graph_file}")
             result = await orchestrator.run(
                 graph=graph_file,
                 ctx=ctx,
-                run_id=run_id
+                run_id=run_id,
+                tools_file=tools,
+                agents_path=agents
             )
 
             if result.success:
@@ -144,24 +163,91 @@ def validate(files: tuple[Path, ...]) -> None:
         click.echo(f"Validating {file_path}")
 
         try:
-            if file_path.suffix.lower() in {'.yaml', '.yml'}:
-                # YAML file - try as tools config first
+            # Handle directories (agents directories)
+            if file_path.is_dir():
                 try:
-                    validate_tools_config(file_path)
-                    click.echo(f"✅ {file_path}: Valid tools configuration")
+                    from agent_orchestra.agents_loader import load_agents_config
+                    result = load_agents_config(file_path)
+                    
+                    # Count agents by provider
+                    provider_counts = {}
+                    version_counts = {}
+                    
+                    for agent in result.agents_list:
+                        model_id = agent.get("model", "")
+                        if ":" in model_id:
+                            provider = model_id.split(":", 1)[0]
+                            provider_counts[provider] = provider_counts.get(provider, 0) + 1
+                        
+                        agent_id = agent.get("id", "")
+                        if "@v" in agent_id:
+                            version = agent_id.split("@v", 1)[1]
+                            version_counts[f"v{version}"] = version_counts.get(f"v{version}", 0) + 1
+                    
+                    click.echo(f"✅ {file_path}: Valid agents directory")
+                    click.echo(f"   Agents: {len(result.agents_list)} total")
+                    
+                    if provider_counts:
+                        providers_str = ", ".join(f"{provider}: {count}" for provider, count in sorted(provider_counts.items()))
+                        click.echo(f"   Providers: {providers_str}")
+                    
+                    if version_counts:
+                        versions_str = ", ".join(f"{version}: {count}" for version, count in sorted(version_counts.items()))
+                        click.echo(f"   Versions: {versions_str}")
+                    
                     continue
-                except ToolsLoaderError as e:
-                    click.echo(f"❌ {file_path}: Invalid tools configuration: {e}", err=True)
+                except AgentsLoaderError as e:
+                    click.echo(f"❌ {file_path}: Invalid agents directory: {e}", err=True)
                     exit_code = 1
                     continue
-            elif file_path.suffix.lower() == '.json':
-                # JSON file - try as tools config first, then generic JSON
+            
+            # Handle files
+            if file_path.suffix.lower() in {'.yaml', '.yml'}:
+                # YAML file - try as tools config, then agents config
+                tools_valid = False
+                agents_valid = False
+                
                 try:
                     validate_tools_config(file_path)
                     click.echo(f"✅ {file_path}: Valid tools configuration")
-                    continue
+                    tools_valid = True
                 except ToolsLoaderError:
-                    # Not a tools config, try as generic JSON
+                    pass
+                
+                if not tools_valid:
+                    try:
+                        validate_agents_config(file_path)
+                        click.echo(f"✅ {file_path}: Valid agents configuration")
+                        agents_valid = True
+                    except AgentsLoaderError:
+                        pass
+                
+                if not tools_valid and not agents_valid:
+                    click.echo(f"❌ {file_path}: Not a valid tools or agents configuration", err=True)
+                    exit_code = 1
+                    
+            elif file_path.suffix.lower() == '.json':
+                # JSON file - try as tools config, then agents config, then generic JSON
+                tools_valid = False
+                agents_valid = False
+                
+                try:
+                    validate_tools_config(file_path)
+                    click.echo(f"✅ {file_path}: Valid tools configuration")
+                    tools_valid = True
+                except ToolsLoaderError:
+                    pass
+                
+                if not tools_valid:
+                    try:
+                        validate_agents_config(file_path)
+                        click.echo(f"✅ {file_path}: Valid agents configuration")
+                        agents_valid = True
+                    except AgentsLoaderError:
+                        pass
+                
+                if not tools_valid and not agents_valid:
+                    # Try as generic JSON
                     try:
                         with open(file_path) as f:
                             json.load(f)
@@ -526,6 +612,42 @@ def create_example() -> None:
 
     click.echo(f"Created example graph: {output_file}")
     click.echo("Run with: catenas run example_graph.json")
+
+
+def _validate_graph_with_agents(graph_file: Path, agents_path: Path | None) -> None:
+    """Validate graph against agents requirements."""
+    import json
+    
+    try:
+        with open(graph_file) as f:
+            graph_data = json.load(f)
+    except Exception as e:
+        click.echo(f"❌ Failed to load graph file: {e}", err=True)
+        sys.exit(1)
+    
+    nodes = graph_data.get("nodes", {})
+    
+    for node_id, node_spec in nodes.items():
+        if node_spec.get("type") == "mcp_agent":
+            config = node_spec.get("config", {})
+            
+            if agents_path:
+                # --agents provided: require config.agent_id
+                if "agent_id" not in config:
+                    click.echo(f"❌ Node '{node_id}' type=mcp_agent requires config.agent_id when --agents is provided", err=True)
+                    sys.exit(1)
+            else:
+                # --agents absent: allow config.model (with provider prefix), warn about inline fallback
+                if "model" not in config:
+                    click.echo(f"❌ Node '{node_id}' type=mcp_agent requires config.model when --agents is not provided", err=True)
+                    sys.exit(1)
+                
+                model = config["model"]
+                if ":" not in model:
+                    click.echo(f"❌ Node '{node_id}' config.model must have provider prefix (e.g., 'openai:gpt-4o-mini')", err=True)
+                    sys.exit(1)
+                
+                click.echo(f"⚠️  WARNING: Node '{node_id}' using inline fallback model '{model}'. Consider using --agents with agent_id instead.")
 
 
 if __name__ == "__main__":

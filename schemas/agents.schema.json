@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agents Registry",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "required": ["id", "model"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9_-]+@v[0-9]+$"
+      },
+      "model": { "type": "string", "minLength": 1 },
+      "description": { "type": "string" },
+      "instructions": { "type": "string" },
+      "allowed_tools": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true
+      },
+      "disallowed_tools": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true
+      },
+      "default_server": { "type": "string" },
+      "max_steps": { "type": "integer", "minimum": 1, "default": 8 },
+      "use_server_manager": { "type": "boolean", "default": true },
+      "llm": {
+        "type": "object",
+        "description": "Provider-specific overrides (e.g., temperature)",
+        "additionalProperties": true
+      },
+      "metadata": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "additionalProperties": false
+  }
+}

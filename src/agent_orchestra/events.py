@@ -50,6 +50,16 @@ class EventType(Enum):
     SERVER_READY = "server.ready"
     SERVER_ERROR = "server.error"
 
+    # Agent lifecycle events
+    AGENT_INIT = "agent.init"
+    AGENT_START = "agent.start"
+    AGENT_COMPLETE = "agent.complete"
+    AGENT_ERROR = "agent.error"
+    
+    # Tool events (debug level)
+    TOOL_CALL = "tool.call"
+    TOOL_RESULT = "tool.result"
+
     # Custom events
     CUSTOM = "custom"
 

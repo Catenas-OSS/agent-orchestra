@@ -1,0 +1,17 @@
+id: "simple@v1"
+model: "openai:gpt-4o-mini"
+description: "Simple agent with no tools (minimal setup)"
+instructions: |
+  You are a simple conversational agent. Answer questions directly and helpfully.
+  You do not have access to any external tools, only your knowledge.
+allowed_tools: []
+disallowed_tools: []
+max_steps: 1
+use_server_manager: false
+llm:
+  temperature: 0.3
+  max_tokens: 500
+metadata:
+  category: "simple"
+  version: "1.0"
+  author: "agent-orchestra"

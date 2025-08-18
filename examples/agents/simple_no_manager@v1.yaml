@@ -1,0 +1,5 @@
+id: "simple_no_manager@v1"
+model: "openai:gpt-4o-mini"
+instructions: "You are a simple agent. Just respond directly to requests."
+max_steps: 3
+use_server_manager: false  # Disable server manager for simplicity
