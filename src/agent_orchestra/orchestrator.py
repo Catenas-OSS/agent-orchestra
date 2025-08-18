@@ -7,7 +7,7 @@ import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,11 @@ from agent_orchestra.policy import (
 
 @dataclass
 class RunResult:
-    """Result from a complete orchestration run."""
+    """Result from a complete orchestration run.
+    
+    Contains execution results, metrics, and any errors that occurred
+    during the orchestration process.
+    """
 
     run_id: str
     trace_id: str
@@ -37,11 +41,7 @@ class RunResult:
     total_cost: float = 0.0
     total_time: float = 0.0
     error: str | None = None
-    checkpoints: list[str] = None
-
-    def __post_init__(self) -> None:
-        if self.checkpoints is None:
-            self.checkpoints = []
+    checkpoints: list[str] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -55,6 +55,15 @@ class Orchestrator:
         budget: Budget | None = None,
         max_concurrency: int = 10
     ) -> None:
+        """Initialize the orchestrator.
+        
+        Args:
+            checkpoint_dir: Directory to store checkpoints for resumption.
+            event_dir: Directory to store JSONL event logs.
+            policy: Security policy for tool and domain restrictions.
+            budget: Resource budget with token, cost, and time limits.
+            max_concurrency: Maximum number of concurrent node executions.
+        """
         self.checkpointer = Checkpointer(checkpoint_dir)
         self.event_dir = Path(event_dir)
         self.event_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +84,20 @@ class Orchestrator:
         ctx: dict[str, Any] | None = None,
         run_id: str | None = None
     ) -> RunResult:
-        """Execute a graph and return the final result."""
+        """Execute a graph and return the final result.
+        
+        Args:
+            graph: Graph specification as Graph object, dict, or file path.
+            ctx: Additional context to merge with graph context.
+            run_id: Custom run ID, generates UUID if not provided.
+            
+        Returns:
+            RunResult with execution metrics and outputs.
+            
+        Raises:
+            ValueError: If graph specification is invalid.
+            RuntimeError: If execution fails unexpectedly.
+        """
 
         # Prepare execution
         run_id = run_id or str(uuid.uuid4())
@@ -105,7 +127,10 @@ class Orchestrator:
 
             # Get final results
             buffer = event_emitter.sinks[1]  # EventBuffer
-            end_events = buffer.get_events(EventType.RUN_END)
+            if isinstance(buffer, EventBuffer):
+                end_events = buffer.get_events(EventType.RUN_END)
+            else:
+                end_events = []
 
             if end_events:
                 final_event = end_events[-1]
@@ -152,7 +177,18 @@ class Orchestrator:
         graph: Graph,
         event_emitter: EventEmitter | None = None
     ) -> AsyncIterator[Event]:
-        """Stream execution events as the graph executes."""
+        """Stream execution events as the graph executes.
+        
+        Args:
+            graph: Graph object to execute.
+            event_emitter: Optional event emitter, creates default if None.
+            
+        Yields:
+            Event: Execution events including start, node events, and end.
+            
+        Raises:
+            Exception: Any exception during graph execution is re-raised.
+        """
 
         if event_emitter is None:
             event_emitter = EventEmitter([EventBuffer()])
@@ -227,7 +263,17 @@ class Orchestrator:
             raise
 
     async def resume(self, checkpoint_id: str) -> RunResult:
-        """Resume execution from a checkpoint."""
+        """Resume execution from a checkpoint.
+        
+        Args:
+            checkpoint_id: ID of the checkpoint to resume from.
+            
+        Returns:
+            RunResult with execution metrics and outputs.
+            
+        Raises:
+            ValueError: If checkpoint is not found.
+        """
 
         # Load checkpoint
         checkpoint = self.checkpointer.load_checkpoint(checkpoint_id)
@@ -254,7 +300,10 @@ class Orchestrator:
 
             # Get final results
             buffer = event_emitter.sinks[1]
-            end_events = buffer.get_events(EventType.RUN_END)
+            if isinstance(buffer, EventBuffer):
+                end_events = buffer.get_events(EventType.RUN_END)
+            else:
+                end_events = []
 
             if end_events:
                 final_event = end_events[-1]
@@ -286,7 +335,17 @@ class Orchestrator:
         det_context: Any,
         event_emitter: EventEmitter
     ) -> AsyncIterator[Event]:
-        """Execute the DAG with topological ordering."""
+        """Execute the DAG with topological ordering.
+        
+        Args:
+            graph: Graph object containing nodes and dependencies.
+            execution_state: Current execution state with completed/failed nodes.
+            det_context: Deterministic context for reproducible execution.
+            event_emitter: Event emitter for logging execution events.
+            
+        Yields:
+            Event: Various execution events including node and budget events.
+        """
 
         execution_order = graph.get_execution_order()
 
@@ -351,7 +410,18 @@ class Orchestrator:
         _det_context: Any,
         event_emitter: EventEmitter
     ) -> AsyncIterator[Event]:
-        """Execute a single node."""
+        """Execute a single node.
+        
+        Args:
+            node_id: ID of the node to execute.
+            graph: Graph object containing node configuration.
+            execution_state: Current execution state to update.
+            _det_context: Deterministic context (unused in current implementation).
+            event_emitter: Event emitter for logging node events.
+            
+        Yields:
+            Event: Node execution events including errors.
+        """
 
         async with self._semaphore:
             # Get node configuration
@@ -415,7 +485,16 @@ class Orchestrator:
         graph: Graph,
         execution_state: dict[str, Any]
     ) -> bool:
-        """Check if all dependencies for a node are satisfied."""
+        """Check if all dependencies for a node are satisfied.
+        
+        Args:
+            node_id: ID of the node to check dependencies for.
+            graph: Graph object containing dependency information.
+            execution_state: Current execution state with completed nodes.
+            
+        Returns:
+            True if all dependencies are satisfied, False otherwise.
+        """
         dependencies = graph.spec.get_dependencies(node_id)
         completed = set(execution_state["completed_nodes"])
         return dependencies.issubset(completed)
@@ -426,7 +505,16 @@ class Orchestrator:
         graph: Graph,
         execution_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Prepare inputs for a node based on its dependencies."""
+        """Prepare inputs for a node based on its dependencies.
+        
+        Args:
+            node_id: ID of the node to prepare inputs for.
+            graph: Graph object containing dependency information.
+            execution_state: Current execution state with node results.
+            
+        Returns:
+            Dictionary of inputs combining dependency outputs and context.
+        """
         inputs = {}
 
         # Get outputs from dependency nodes
@@ -446,7 +534,16 @@ class Orchestrator:
         graph: Graph,
         event_emitter: EventEmitter
     ) -> AsyncIterator[Event]:
-        """Resume execution from a checkpoint."""
+        """Resume execution from a checkpoint.
+        
+        Args:
+            checkpoint: Checkpoint state to resume from.
+            graph: Graph object to continue executing.
+            event_emitter: Event emitter for logging execution events.
+            
+        Yields:
+            Event: Execution events from the resumed run.
+        """
 
         # Restore execution state
         execution_state = {

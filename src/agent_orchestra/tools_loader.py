@@ -7,7 +7,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 try:
@@ -15,21 +15,32 @@ try:
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
+    yaml = None
 
 try:
     import jsonschema
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
+    jsonschema = None
 
 
 class ToolsLoaderError(Exception):
-    """Error loading or validating tools configuration."""
+    """Error loading or validating tools configuration.
+    
+    Raised when tools configuration files cannot be loaded,
+    parsed, or validated against the schema.
+    """
     pass
 
 
 class ToolsLoader:
-    """Loads and validates MCP tools configurations."""
+    """Loads and validates MCP tools configurations.
+    
+    Handles loading tools configuration files in YAML or JSON format,
+    validates them against the schema, and provides canonicalization
+    for consistent hashing and comparison.
+    """
 
     def __init__(self, schema_path: str | Path | None = None):
         """Initialize tools loader.
@@ -45,19 +56,36 @@ class ToolsLoader:
         self.schema_path = Path(schema_path)
         self._schema: dict[str, Any] | None = None
 
+    def _load_schema(self) -> dict[str, Any]:
+        """Load the JSON schema from file.
+        
+        Returns:
+            The loaded schema dictionary
+            
+        Raises:
+            ToolsLoaderError: If schema file not found or invalid
+        """
+        if not self.schema_path.exists():
+            raise ToolsLoaderError(f"Schema file not found: {self.schema_path}")
+
+        try:
+            with open(self.schema_path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise ToolsLoaderError(f"Failed to load schema: {e}")
+
     @property
     def schema(self) -> dict[str, Any]:
-        """Load and cache the JSON schema."""
+        """Load and cache the JSON schema.
+        
+        Returns:
+            The tools configuration JSON schema
+            
+        Raises:
+            ToolsLoaderError: If schema file not found or invalid
+        """
         if self._schema is None:
-            if not self.schema_path.exists():
-                raise ToolsLoaderError(f"Schema file not found: {self.schema_path}")
-
-            try:
-                with open(self.schema_path) as f:
-                    self._schema = json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
-                raise ToolsLoaderError(f"Failed to load schema: {e}")
-
+            self._schema = self._load_schema()
         return self._schema
 
     def load(self, config_path: str | Path) -> dict[str, Any]:
@@ -78,9 +106,10 @@ class ToolsLoader:
             raise ToolsLoaderError(f"Tools config file not found: {config_path}")
 
         # Load file based on extension
+        config: Any
         try:
             if config_path.suffix.lower() in {'.yaml', '.yml'}:
-                if not YAML_AVAILABLE:
+                if not YAML_AVAILABLE or yaml is None:
                     raise ToolsLoaderError(
                         "PyYAML not installed. Install with: pip install PyYAML"
                     )
@@ -94,25 +123,41 @@ class ToolsLoader:
                     f"Unsupported file format: {config_path.suffix}. "
                     "Use .yaml, .yml, or .json"
                 )
-        except (yaml.YAMLError, json.JSONDecodeError, OSError) as e:
+        except Exception as e:
+            # Handle both YAML and JSON parsing errors, plus file I/O errors
+            if YAML_AVAILABLE and yaml is not None:
+                if hasattr(yaml, 'YAMLError') and isinstance(e, yaml.YAMLError):
+                    raise ToolsLoaderError(f"Failed to parse {config_path}: {e}")
+            if isinstance(e, (json.JSONDecodeError, OSError)):
+                raise ToolsLoaderError(f"Failed to parse {config_path}: {e}")
+            # Re-raise ToolsLoaderError as-is
+            if isinstance(e, ToolsLoaderError):
+                raise
+            # Catch-all for other exceptions
             raise ToolsLoaderError(f"Failed to parse {config_path}: {e}")
 
         if not isinstance(config, dict):
             raise ToolsLoaderError(f"Config must be an object, got {type(config).__name__}")
 
+        # At this point, config is guaranteed to be a dict
+        config_dict: dict[str, Any] = config
+
         # Expand environment variables and paths
-        config = self._expand_variables(config)
+        config_dict = self._expand_variables(config_dict)
 
         # Validate against schema
-        self._validate(config)
+        self._validate(config_dict)
 
         # Additional validation checks
-        self._validate_edge_cases(config)
+        self._validate_edge_cases(config_dict)
 
-        return config
+        return config_dict
 
     def validate(self, config_path: str | Path) -> None:
         """Validate tools configuration file.
+        
+        Loads and validates the configuration file without returning
+        the loaded configuration. Useful for validation-only checks.
         
         Args:
             config_path: Path to config file
@@ -124,6 +169,9 @@ class ToolsLoader:
 
     def canonicalize(self, config: dict[str, Any]) -> dict[str, Any]:
         """Canonicalize config for consistent hashing.
+        
+        Transforms configuration into a canonical form with sorted keys
+        and normalized string values for consistent hashing and comparison.
         
         Args:
             config: Tools configuration dict
@@ -143,10 +191,17 @@ class ToolsLoader:
             else:
                 return obj
 
-        return _canonicalize_recursive(config)
+        result = _canonicalize_recursive(config)
+        # Ensure we return a dict[str, Any]
+        if not isinstance(result, dict):
+            raise ToolsLoaderError("Canonicalization failed to produce a dictionary")
+        return result
 
     def _expand_variables(self, config: dict[str, Any]) -> dict[str, Any]:
         """Expand environment variables and home directory in config.
+        
+        Recursively processes the configuration to expand environment
+        variables (${VAR}) and home directory paths (~) in string values.
         
         Args:
             config: Raw configuration dict
@@ -170,10 +225,17 @@ class ToolsLoader:
             else:
                 return obj
 
-        return _expand_recursive(config)
+        result = _expand_recursive(config)
+        # Ensure we return a dict[str, Any]
+        if not isinstance(result, dict):
+            raise ToolsLoaderError("Variable expansion failed to produce a dictionary")
+        return result
 
     def _validate(self, config: dict[str, Any]) -> None:
         """Validate config against JSON schema.
+        
+        Validates the configuration against the tools schema if
+        jsonschema is available. Skips validation if not installed.
         
         Args:
             config: Configuration to validate
@@ -181,7 +243,7 @@ class ToolsLoader:
         Raises:
             ToolsLoaderError: If validation fails
         """
-        if not JSONSCHEMA_AVAILABLE:
+        if not JSONSCHEMA_AVAILABLE or jsonschema is None:
             # Skip schema validation if jsonschema not available
             return
 
@@ -194,6 +256,9 @@ class ToolsLoader:
 
     def _validate_edge_cases(self, config: dict[str, Any]) -> None:
         """Additional validation checks beyond schema.
+        
+        Performs domain-specific validation that cannot be expressed
+        in JSON schema, such as server name uniqueness and transport validation.
         
         Args:
             config: Configuration to validate
@@ -220,6 +285,10 @@ class ToolsLoader:
 
     def _validate_server(self, name: str, config: dict[str, Any]) -> None:
         """Validate individual server configuration.
+        
+        Checks that each server has valid transport configuration
+        (either stdio or HTTP/SSE), validates commands exist on PATH,
+        and validates URL formats.
         
         Args:
             name: Server name
@@ -283,6 +352,8 @@ class ToolsLoader:
 def load_tools_config(config_path: str | Path) -> dict[str, Any]:
     """Convenience function to load tools configuration.
     
+    Creates a ToolsLoader instance and loads the specified configuration file.
+    
     Args:
         config_path: Path to tools config file
         
@@ -298,6 +369,8 @@ def load_tools_config(config_path: str | Path) -> dict[str, Any]:
 
 def validate_tools_config(config_path: str | Path) -> None:
     """Convenience function to validate tools configuration.
+    
+    Creates a ToolsLoader instance and validates the specified configuration file.
     
     Args:
         config_path: Path to tools config file

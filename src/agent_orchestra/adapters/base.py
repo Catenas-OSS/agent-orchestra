@@ -21,6 +21,10 @@ class UsageMetrics:
     output_tokens: int | None = None
 
     def __post_init__(self) -> None:
+        """Initialize latency if not provided.
+        
+        Sets latency_ms to current timestamp if it's 0.
+        """
         if self.latency_ms == 0:
             self.latency_ms = int(time.time() * 1000)
 
@@ -48,7 +52,11 @@ class AdapterResult:
 
     @property
     def success(self) -> bool:
-        """True if no errors occurred."""
+        """Check if the adapter call was successful.
+        
+        Returns:
+            True if no errors occurred during execution.
+        """
         return len(self.errors) == 0
 
 
@@ -83,7 +91,14 @@ class BaseAdapter(Protocol):
 
     @abstractmethod
     async def get_available_tools(self, agent: str) -> list[str]:
-        """Get list of available tools for an agent."""
+        """Get list of available tools for an agent.
+        
+        Args:
+            agent: Agent identifier/configuration.
+            
+        Returns:
+            List of tool names available for this agent.
+        """
         ...
 
     @abstractmethod
@@ -99,7 +114,12 @@ class AdapterRegistry:
         self._adapters: dict[str, BaseAdapter] = {}
 
     def register(self, name: str, adapter: BaseAdapter) -> None:
-        """Register an adapter instance."""
+        """Register an adapter instance.
+        
+        Args:
+            name: Name to register the adapter under.
+            adapter: Adapter instance to register.
+        """
         self._adapters[name] = adapter
 
     def get(self, name: str) -> BaseAdapter | None:
@@ -111,7 +131,11 @@ class AdapterRegistry:
         return list(self._adapters.keys())
 
     def load_from_entry_points(self) -> None:
-        """Load adapters from setuptools entry points."""
+        """Load adapters from setuptools entry points.
+        
+        Attempts to load adapters using importlib.metadata first,
+        then falls back to pkg_resources for older Python versions.
+        """
         try:
             from importlib.metadata import entry_points
 

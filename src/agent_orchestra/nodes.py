@@ -33,6 +33,14 @@ class Node(ABC):
         adapter: BaseAdapter,
         event_emitter: EventEmitter
     ) -> None:
+        """Initialize the node.
+        
+        Args:
+            node_id: Unique identifier for this node.
+            config: Node-specific configuration dictionary.
+            adapter: Adapter instance for backend communication.
+            event_emitter: Event emitter for logging node events.
+        """
         self.node_id = node_id
         self.config = config
         self.adapter = adapter
@@ -46,7 +54,17 @@ class Node(ABC):
         trace_id: str,
         span_id: str
     ) -> NodeResult:
-        """Execute the node with given inputs and context."""
+        """Execute the node with given inputs and context.
+        
+        Args:
+            inputs: Input data for the node execution.
+            context: Execution context including run metadata.
+            trace_id: Unique identifier for distributed tracing.
+            span_id: Unique identifier for this execution span.
+            
+        Returns:
+            NodeResult containing output, metadata, and success status.
+        """
         ...
 
 
@@ -60,7 +78,17 @@ class MCPAgentNode(Node):
         trace_id: str,
         span_id: str
     ) -> NodeResult:
-        """Execute MCP agent node."""
+        """Execute MCP agent node.
+        
+        Args:
+            inputs: Input data for the MCP agent.
+            context: Execution context including run metadata.
+            trace_id: Unique identifier for distributed tracing.
+            span_id: Unique identifier for this execution span.
+            
+        Returns:
+            NodeResult containing agent output and execution metadata.
+        """
         try:
             # Emit start event
             await self.event_emitter.emit(Event(
@@ -106,7 +134,7 @@ class MCPAgentNode(Node):
                 node_id=self.node_id,
                 payload={
                     "output": result.output,
-                    "usage": result.usage.to_dict() if hasattr(result.usage, 'to_dict') else {},
+                    "usage": result.usage.__dict__ if hasattr(result.usage, '__dict__') else {},
                     "success": node_result.success,
                     "error": node_result.error
                 }
@@ -143,6 +171,14 @@ class CompositeNode(Node):
         adapter: BaseAdapter,
         event_emitter: EventEmitter
     ) -> None:
+        """Initialize the composite node.
+        
+        Args:
+            node_id: Unique identifier for this node.
+            config: Node-specific configuration dictionary.
+            adapter: Adapter instance for backend communication.
+            event_emitter: Event emitter for logging node events.
+        """
         super().__init__(node_id, config, adapter, event_emitter)
         self.max_concurrency = config.get("max_concurrency", 5)
 
@@ -153,7 +189,17 @@ class CompositeNode(Node):
         trace_id: str,
         span_id: str
     ) -> NodeResult:
-        """Execute composite node with sharding."""
+        """Execute composite node with sharding.
+        
+        Args:
+            inputs: Input data containing shards or single input.
+            context: Execution context including run metadata.
+            trace_id: Unique identifier for distributed tracing.
+            span_id: Unique identifier for this execution span.
+            
+        Returns:
+            NodeResult containing aggregated results from all shards.
+        """
         try:
             # Get sharding configuration
             shards = inputs.get("shards", [inputs])
@@ -224,7 +270,20 @@ class FunctionNode(Node):
         trace_id: str,
         span_id: str
     ) -> NodeResult:
-        """Execute function node."""
+        """Execute function node.
+        
+        Args:
+            inputs: Input data for the function.
+            context: Execution context including run metadata.
+            trace_id: Unique identifier for distributed tracing.
+            span_id: Unique identifier for this execution span.
+            
+        Returns:
+            NodeResult containing function output.
+            
+        Raises:
+            ValueError: If function name is not specified in config.
+        """
         try:
             function_name = self.config.get("function")
             if not function_name:
@@ -254,7 +313,21 @@ def create_node(
     adapter: BaseAdapter,
     event_emitter: EventEmitter
 ) -> Node:
-    """Factory function to create nodes of different types."""
+    """Factory function to create nodes of different types.
+    
+    Args:
+        node_id: Unique identifier for the node.
+        node_type: Type of node to create (mcp_agent, composite, function).
+        config: Node-specific configuration dictionary.
+        adapter: Adapter instance for backend communication.
+        event_emitter: Event emitter for logging node events.
+        
+    Returns:
+        Node instance of the specified type.
+        
+    Raises:
+        ValueError: If node_type is not recognized.
+    """
 
     if node_type == "mcp_agent":
         return MCPAgentNode(node_id, config, adapter, event_emitter)

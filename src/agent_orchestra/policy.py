@@ -32,7 +32,14 @@ class Budget:
     start_time: float = field(default_factory=time.time)
 
     def check_tokens(self, additional_tokens: int) -> bool:
-        """Check if additional token usage would exceed budget."""
+        """Check if additional token usage would exceed budget.
+        
+        Args:
+            additional_tokens: Number of tokens to check against budget.
+            
+        Returns:
+            True if usage would not exceed budget, False otherwise.
+        """
         if self.max_tokens is None:
             return True
         return (self.used_tokens + additional_tokens) <= self.max_tokens
@@ -57,7 +64,11 @@ class Budget:
         return elapsed <= self.max_time
 
     def consume_tokens(self, tokens: int) -> None:
-        """Consume tokens from budget."""
+        """Consume tokens from budget.
+        
+        Args:
+            tokens: Number of tokens to consume.
+        """
         self.used_tokens += tokens
 
     def consume_cost(self, cost: float) -> None:
@@ -69,7 +80,11 @@ class Budget:
         self.used_children += children
 
     def is_exceeded(self) -> bool:
-        """Check if any budget limit is exceeded."""
+        """Check if any budget limit is exceeded.
+        
+        Returns:
+            True if any budget limit (tokens, cost, children, time) is exceeded.
+        """
         return not all([
             self.check_tokens(0),
             self.check_cost(0.0),

@@ -20,21 +20,35 @@ try:
     MCP_USE_AVAILABLE = True
 except ImportError:
     MCP_USE_AVAILABLE = False
-    MCPAgent = None
-    MCPClient = None
+    # Create type-safe stubs for when mcp-use is not available
+    MCPAgent = Any  # type: ignore
+    MCPClient = Any  # type: ignore
 
 
 class MCPUseAdapter(BaseAdapter):
-    """Adapter for MCP-USE agents."""
+    """Adapter for MCP-USE agents.
+    
+    Provides integration with the MCP-USE library for executing
+    Model Context Protocol (MCP) agents and tools. Handles client
+    creation, agent management, and execution lifecycle.
+    """
 
     def __init__(self, event_emitter: EventEmitter | None = None) -> None:
+        """Initialize the MCP-USE adapter.
+        
+        Args:
+            event_emitter: Optional event emitter for lifecycle events
+            
+        Raises:
+            ImportError: If mcp-use is not installed
+        """
         if not MCP_USE_AVAILABLE:
             raise ImportError(
                 "mcp-use is not installed. Install with: pip install mcp-use"
             )
 
-        self._clients: dict[str, MCPClient] = {}
-        self._agents: dict[str, MCPAgent] = {}
+        self._clients: dict[str, Any] = {}
+        self._agents: dict[str, Any] = {}
         self._event_emitter = event_emitter
         self._tools_loader = ToolsLoader()
 
@@ -46,7 +60,17 @@ class MCPUseAdapter(BaseAdapter):
         inputs: dict[str, Any],
         meta: dict[str, Any]
     ) -> AdapterResult:
-        """Execute a tool call through MCP-USE."""
+        """Execute a tool call through MCP-USE.
+        
+        Args:
+            agent: Agent configuration string or identifier
+            tool: Name of the tool to execute
+            inputs: Input parameters for the tool
+            meta: Metadata including trace/span IDs and execution context
+            
+        Returns:
+            AdapterResult containing output, usage metrics, and metadata
+        """
         start_time = time.time()
 
         try:
@@ -97,7 +121,14 @@ class MCPUseAdapter(BaseAdapter):
             )
 
     async def get_available_tools(self, agent: str) -> list[str]:
-        """Get available tools for an MCP agent."""
+        """Get available tools for an MCP agent.
+        
+        Args:
+            agent: Agent configuration string or identifier
+            
+        Returns:
+            List of available tool names for the agent
+        """
         try:
             client = await self._get_client(agent)
             # TODO: Query MCP client for available tools
@@ -107,7 +138,11 @@ class MCPUseAdapter(BaseAdapter):
             return []
 
     async def health_check(self) -> bool:
-        """Check if MCP-USE is available and working."""
+        """Check if MCP-USE is available and working.
+        
+        Returns:
+            True if MCP-USE is functional, False otherwise
+        """
         try:
             # Simple test to ensure mcp-use is working
             test_config = {
@@ -118,13 +153,20 @@ class MCPUseAdapter(BaseAdapter):
                     }
                 }
             }
-            client = MCPClient.from_dict(test_config)
+            client = MCPClient.from_dict(test_config)  # type: ignore
             return True
         except Exception:
             return False
 
-    async def _get_client(self, agent_config: str | dict[str, Any]) -> MCPClient:
-        """Get or create MCP client for agent configuration."""
+    async def _get_client(self, agent_config: str | dict[str, Any]) -> Any:
+        """Get or create MCP client for agent configuration.
+        
+        Args:
+            agent_config: Agent configuration as string (JSON/file path) or dict
+            
+        Returns:
+            MCPClient instance for the configuration
+        """
         config_key = self._get_config_key(agent_config)
 
         if config_key not in self._clients:
@@ -134,16 +176,24 @@ class MCPUseAdapter(BaseAdapter):
                     config = json.loads(agent_config)
                 except json.JSONDecodeError:
                     # Assume it's a config file path
-                    self._clients[config_key] = MCPClient.from_config_file(agent_config)
+                    self._clients[config_key] = MCPClient.from_config_file(agent_config)  # type: ignore
                 else:
-                    self._clients[config_key] = MCPClient.from_dict(config)
+                    self._clients[config_key] = MCPClient.from_dict(config)  # type: ignore
             else:
-                self._clients[config_key] = MCPClient.from_dict(agent_config)
+                self._clients[config_key] = MCPClient.from_dict(agent_config)  # type: ignore
 
         return self._clients[config_key]
 
-    async def _get_agent(self, agent_config: str | dict[str, Any], meta: dict[str, Any]) -> MCPAgent:
-        """Get or create MCP agent."""
+    async def _get_agent(self, agent_config: str | dict[str, Any], meta: dict[str, Any]) -> Any:
+        """Get or create MCP agent.
+        
+        Args:
+            agent_config: Agent configuration as string or dict
+            meta: Metadata containing LLM and execution parameters
+            
+        Returns:
+            MCPAgent instance ready for execution
+        """
         config_key = self._get_config_key(agent_config)
 
         if config_key not in self._agents:
@@ -163,7 +213,7 @@ class MCPUseAdapter(BaseAdapter):
                     )
 
             max_steps = meta.get("max_steps", 30)
-            self._agents[config_key] = MCPAgent(
+            self._agents[config_key] = MCPAgent(  # type: ignore
                 llm=llm,
                 client=client,
                 max_steps=max_steps
@@ -172,13 +222,28 @@ class MCPUseAdapter(BaseAdapter):
         return self._agents[config_key]
 
     def _get_config_key(self, agent_config: str | dict[str, Any]) -> str:
-        """Generate a key for caching clients/agents."""
+        """Generate a key for caching clients/agents.
+        
+        Args:
+            agent_config: Agent configuration as string or dict
+            
+        Returns:
+            String key suitable for caching
+        """
         if isinstance(agent_config, str):
             return agent_config
         return str(hash(json.dumps(agent_config, sort_keys=True)))
 
     def _format_tool_call(self, tool: str, inputs: dict[str, Any]) -> str:
-        """Format tool call as a prompt for the agent."""
+        """Format tool call as a prompt for the agent.
+        
+        Args:
+            tool: Name of the tool to call
+            inputs: Input parameters for the tool
+            
+        Returns:
+            Formatted prompt string for the agent
+        """
         if not inputs:
             return f"Use the {tool} tool"
 
@@ -190,7 +255,15 @@ class MCPUseAdapter(BaseAdapter):
         return f"Use the {tool} tool with the following inputs: {', '.join(input_parts)}"
 
     def _estimate_tokens(self, prompt: str, response: str) -> int:
-        """Rough token estimation (replace with actual tokenizer if needed)."""
+        """Rough token estimation (replace with actual tokenizer if needed).
+        
+        Args:
+            prompt: Input prompt text
+            response: Response text
+            
+        Returns:
+            Estimated token count for prompt and response
+        """
         # Very rough estimate: ~4 characters per token
         total_chars = len(prompt) + len(response)
         return total_chars // 4
@@ -202,7 +275,7 @@ class MCPUseAdapter(BaseAdapter):
         run_id: str | None = None,
         trace_id: str | None = None,
         span_id: str | None = None
-    ) -> MCPClient:
+    ) -> Any:
         """Build MCPClient from config dict or path.
         
         Args:
@@ -249,7 +322,7 @@ class MCPUseAdapter(BaseAdapter):
                 ))
 
         # Create client
-        client = MCPClient.from_dict(config)
+        client = MCPClient.from_dict(config)  # type: ignore
 
         # Optional readiness check
         if self._event_emitter and run_id and trace_id and span_id:
@@ -260,12 +333,12 @@ class MCPUseAdapter(BaseAdapter):
     def build_agent(
         self,
         llm: Any,
-        client: MCPClient,
+        client: Any,
         max_steps: int,
         *,
         disallowed_tools: list[str] | None = None,
         use_server_manager: bool = False
-    ) -> MCPAgent:
+    ) -> Any:
         """Build MCPAgent with specified configuration.
         
         Args:
@@ -278,7 +351,7 @@ class MCPUseAdapter(BaseAdapter):
         Returns:
             MCPAgent instance
         """
-        return MCPAgent(
+        return MCPAgent(  # type: ignore
             llm=llm,
             client=client,
             max_steps=max_steps,
@@ -288,7 +361,7 @@ class MCPUseAdapter(BaseAdapter):
 
     async def run(
         self,
-        agent: MCPAgent,
+        agent: Any,
         prompt: str,
         *,
         server_name: str | None = None
@@ -304,13 +377,13 @@ class MCPUseAdapter(BaseAdapter):
             Agent execution result
         """
         if server_name is not None:
-            return await agent.run(prompt, server_name=server_name)
+            return await agent.run(prompt, server_name=server_name)  # type: ignore
         else:
-            return await agent.run(prompt)
+            return await agent.run(prompt)  # type: ignore
 
     async def close_all(
         self,
-        client: MCPClient,
+        client: Any,
         *,
         run_id: str | None = None,
         trace_id: str | None = None,
@@ -325,7 +398,7 @@ class MCPUseAdapter(BaseAdapter):
             span_id: Span ID for event emission
         """
         try:
-            await client.close_all_sessions()
+            await client.close_all_sessions()  # type: ignore
         finally:
             # Always emit client.stop event
             if self._event_emitter and run_id and trace_id and span_id:
@@ -339,7 +412,7 @@ class MCPUseAdapter(BaseAdapter):
 
     async def _check_server_readiness(
         self,
-        client: MCPClient,
+        client: Any,
         config: dict[str, Any],
         run_id: str,
         trace_id: str,
@@ -369,32 +442,35 @@ class MCPUseAdapter(BaseAdapter):
 
                 # Emit server.ready
                 elapsed_ms = int((time.time() - start_time) * 1000)
-                await self._event_emitter.emit(Event(
-                    type=EventType.SERVER_READY,
-                    run_id=run_id,
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    payload={"name": server_name, "ms": elapsed_ms}
-                ))
+                if self._event_emitter:
+                    await self._event_emitter.emit(Event(
+                        type=EventType.SERVER_READY,
+                        run_id=run_id,
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        payload={"name": server_name, "ms": elapsed_ms}
+                    ))
 
             except TimeoutError:
-                await self._event_emitter.emit(Event(
-                    type=EventType.SERVER_ERROR,
-                    run_id=run_id,
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    payload={"name": server_name, "reason": f"Timeout after {timeout_s}s"}
-                ))
+                if self._event_emitter:
+                    await self._event_emitter.emit(Event(
+                        type=EventType.SERVER_ERROR,
+                        run_id=run_id,
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        payload={"name": server_name, "reason": f"Timeout after {timeout_s}s"}
+                    ))
             except Exception as e:
-                await self._event_emitter.emit(Event(
-                    type=EventType.SERVER_ERROR,
-                    run_id=run_id,
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    payload={"name": server_name, "reason": str(e)}
-                ))
+                if self._event_emitter:
+                    await self._event_emitter.emit(Event(
+                        type=EventType.SERVER_ERROR,
+                        run_id=run_id,
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        payload={"name": server_name, "reason": str(e)}
+                    ))
 
-    async def _ping_server_readiness(self, client: MCPClient, server_name: str) -> None:
+    async def _ping_server_readiness(self, client: Any, server_name: str) -> None:
         """Ping server for readiness (light check).
         
         Args:

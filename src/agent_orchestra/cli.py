@@ -19,7 +19,11 @@ from agent_orchestra.tools_loader import ToolsLoaderError, validate_tools_config
 @click.group()
 @click.version_option(version=__version__)
 def main() -> None:
-    """Agent Orchestra CLI - Universal Multi-Agent Orchestrator."""
+    """Agent Orchestra CLI - Universal Multi-Agent Orchestrator.
+    
+    Main CLI entry point that provides commands for running, monitoring,
+    and managing multi-agent orchestrations.
+    """
     pass
 
 
@@ -44,7 +48,23 @@ def run(
     event_dir: Path,
     max_concurrency: int
 ) -> None:
-    """Run a graph from a JSON specification file."""
+    """Run a graph from a JSON specification file.
+    
+    Executes a multi-agent orchestration from a graph specification file,
+    with optional tools configuration, context, and execution parameters.
+    
+    Args:
+        graph_file: Path to the JSON graph specification file
+        run_id: Optional custom run identifier for this execution
+        context: Additional context as JSON string to merge with graph context
+        tools: Optional path to tools configuration file (.yaml/.yml/.json)
+        checkpoint_dir: Directory to store execution checkpoints
+        event_dir: Directory to store event logs
+        max_concurrency: Maximum number of nodes to execute concurrently
+        
+    Raises:
+        SystemExit: If validation fails, context is invalid JSON, or execution fails
+    """
 
     async def _run() -> None:
         # Validate tools config if provided
@@ -106,7 +126,17 @@ def run(
 @main.command()
 @click.argument("files", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
 def validate(files: tuple[Path, ...]) -> None:
-    """Validate configuration files (tools.yaml, graph.json, etc.)."""
+    """Validate configuration files (tools.yaml, graph.json, etc.).
+    
+    Validates one or more configuration files, automatically detecting
+    file types and applying appropriate validation rules.
+    
+    Args:
+        files: Tuple of file paths to validate
+        
+    Raises:
+        SystemExit: If any validation fails (exits with code 1)
+    """
 
     exit_code = 0
 
@@ -162,7 +192,20 @@ def validate(files: tuple[Path, ...]) -> None:
 @click.option("--follow", "-f", is_flag=True, help="Follow new events")
 @click.option("--filter", "event_filter", help="Filter by event type")
 def tail(run_id: str, event_dir: Path, follow: bool, event_filter: str | None) -> None:
-    """Tail events from a running or completed orchestration."""
+    """Tail events from a running or completed orchestration.
+    
+    Displays events from an orchestration run in real-time or from
+    a completed run's event log file.
+    
+    Args:
+        run_id: Unique identifier for the orchestration run
+        event_dir: Directory containing event log files
+        follow: Whether to follow new events (TODO: not yet implemented)
+        event_filter: Optional event type filter to apply
+        
+    Raises:
+        SystemExit: If event file not found or reading fails
+    """
 
     async def _tail() -> None:
         event_file = event_dir / f"{run_id}.jsonl"
@@ -202,7 +245,19 @@ def tail(run_id: str, event_dir: Path, follow: bool, event_filter: str | None) -
 @click.option("--event-dir", type=click.Path(path_type=Path),
               default="./events", help="Event log directory")
 def resume(checkpoint_id: str, checkpoint_dir: Path, event_dir: Path) -> None:
-    """Resume execution from a checkpoint."""
+    """Resume execution from a checkpoint.
+    
+    Restores and continues execution of an orchestration from a previously
+    saved checkpoint, maintaining all state and progress.
+    
+    Args:
+        checkpoint_id: Unique identifier of the checkpoint to resume from
+        checkpoint_dir: Directory containing checkpoint files
+        event_dir: Directory to store event logs for resumed execution
+        
+    Raises:
+        SystemExit: If checkpoint not found or resume fails
+    """
 
     async def _resume() -> None:
         orchestrator = Orchestrator(
@@ -237,7 +292,20 @@ def resume(checkpoint_id: str, checkpoint_dir: Path, event_dir: Path) -> None:
 @click.option("--reason", required=True, help="Reason for approval")
 @click.option("--approver", help="Approver name", default="cli-user")
 def approve(run_id: str, node_id: str, reason: str, approver: str) -> None:
-    """Approve a pending HITL request."""
+    """Approve a pending HITL request.
+    
+    Approves a human-in-the-loop (HITL) request that is blocking
+    execution of a specific node in an orchestration.
+    
+    Args:
+        run_id: Unique identifier for the orchestration run
+        node_id: Identifier of the node with pending approval
+        reason: Human-readable reason for the approval
+        approver: Name/identifier of the person approving
+        
+    Raises:
+        SystemExit: If approval request not found
+    """
 
     # This is a simplified implementation
     # In production, this would connect to a shared approval system
@@ -258,7 +326,20 @@ def approve(run_id: str, node_id: str, reason: str, approver: str) -> None:
 @click.option("--reason", required=True, help="Reason for denial")
 @click.option("--approver", help="Approver name", default="cli-user")
 def deny(run_id: str, node_id: str, reason: str, approver: str) -> None:
-    """Deny a pending HITL request."""
+    """Deny a pending HITL request.
+    
+    Denies a human-in-the-loop (HITL) request, which will typically
+    cause the associated node execution to fail or be skipped.
+    
+    Args:
+        run_id: Unique identifier for the orchestration run
+        node_id: Identifier of the node with pending approval
+        reason: Human-readable reason for the denial
+        approver: Name/identifier of the person denying
+        
+    Raises:
+        SystemExit: If approval request not found
+    """
 
     hitl_manager = HITLManager()
 
@@ -277,7 +358,19 @@ def deny(run_id: str, node_id: str, reason: str, approver: str) -> None:
 @click.option("--event-dir", type=click.Path(path_type=Path),
               default="./events", help="Event log directory")
 def inspect(run_id: str, span_id: str | None, event_dir: Path) -> None:
-    """Inspect a run with detailed event information."""
+    """Inspect a run with detailed event information.
+    
+    Provides detailed analysis and timeline view of an orchestration run,
+    including event summary, timeline, and payload inspection.
+    
+    Args:
+        run_id: Unique identifier for the orchestration run
+        span_id: Optional specific span to filter events by
+        event_dir: Directory containing event log files
+        
+    Raises:
+        SystemExit: If event file not found or no events found
+    """
 
     async def _inspect() -> None:
         event_file = event_dir / f"{run_id}.jsonl"
@@ -333,7 +426,14 @@ def inspect(run_id: str, span_id: str | None, event_dir: Path) -> None:
 @click.option("--checkpoint-dir", type=click.Path(path_type=Path),
               default="./checkpoints", help="Checkpoint directory")
 def list_checkpoints(checkpoint_dir: Path) -> None:
-    """List all available checkpoints."""
+    """List all available checkpoints.
+    
+    Displays information about all checkpoints stored in the checkpoint
+    directory, including metadata and execution statistics.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoint files
+    """
 
     from agent_orchestra.checkpointer import Checkpointer
 
@@ -360,7 +460,11 @@ def list_checkpoints(checkpoint_dir: Path) -> None:
 
 @main.command()
 def create_example() -> None:
-    """Create an example graph file."""
+    """Create an example graph file.
+    
+    Generates a sample orchestration graph file demonstrating
+    basic multi-agent workflow patterns and configuration.
+    """
 
     example_graph = {
         "nodes": {

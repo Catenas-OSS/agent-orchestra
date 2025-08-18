@@ -9,6 +9,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from random import Random
 from typing import Any
 
 
@@ -43,7 +44,11 @@ class CheckpointState:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization.
+        
+        Returns:
+            Dictionary representation of the checkpoint state.
+        """
         return asdict(self)
 
     def to_json(self) -> str:
@@ -81,6 +86,11 @@ class Checkpointer:
     """Manages checkpointing and replay functionality."""
 
     def __init__(self, checkpoint_dir: str | Path = "./checkpoints") -> None:
+        """Initialize the checkpointer.
+        
+        Args:
+            checkpoint_dir: Directory to store checkpoint files.
+        """
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +105,21 @@ class Checkpointer:
         context: dict[str, Any],
         usage: dict[str, Any] | None = None
     ) -> CheckpointState:
-        """Create a new checkpoint."""
+        """Create a new checkpoint.
+        
+        Args:
+            run_id: Unique identifier for the run.
+            trace_id: Unique identifier for distributed tracing.
+            graph_spec: Graph specification dictionary.
+            node_states: Current state of all nodes.
+            completed_nodes: List of completed node IDs.
+            failed_nodes: List of failed node IDs.
+            context: Execution context dictionary.
+            usage: Optional usage metrics (tokens, cost, children).
+            
+        Returns:
+            CheckpointState object ready for serialization.
+        """
 
         checkpoint_id = str(uuid.uuid4())
 
@@ -197,9 +221,9 @@ class DeterministicContext:
     def __init__(self, rng_seed: int, injected_time: float) -> None:
         self.rng_seed = rng_seed
         self.injected_time = injected_time
-        self._rng = self._create_rng()
+        self._rng: Random = self._create_rng()
 
-    def _create_rng(self) -> Any:
+    def _create_rng(self) -> Random:
         """Create a seeded random number generator."""
         import random
         rng = random.Random(self.rng_seed)

@@ -72,30 +72,62 @@ class Event:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Generate span_id if not provided."""
+        """Generate span_id if not provided.
+        
+        Ensures that every event has a unique span ID for tracing.
+        """
         if not self.span_id:
             self.span_id = str(uuid.uuid4())
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization.
+        
+        Returns:
+            Dictionary representation of the event with enum values converted to strings.
+        """
         data = asdict(self)
         data['type'] = self.type.value
         return data
 
     def to_json(self) -> str:
-        """Convert to JSON string."""
+        """Convert to JSON string.
+        
+        Returns:
+            JSON string representation of the event.
+        """
         return json.dumps(self.to_dict(), default=str)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Event":
-        """Create event from dictionary."""
+        """Create event from dictionary.
+        
+        Args:
+            data: Dictionary containing event data with 'type' as string.
+            
+        Returns:
+            Event instance created from dictionary data.
+            
+        Raises:
+            ValueError: If event type is invalid.
+        """
         data = data.copy()
         data['type'] = EventType(data['type'])
         return cls(**data)
 
     @classmethod
     def from_json(cls, json_str: str) -> "Event":
-        """Create event from JSON string."""
+        """Create event from JSON string.
+        
+        Args:
+            json_str: JSON string containing event data.
+            
+        Returns:
+            Event instance created from JSON data.
+            
+        Raises:
+            json.JSONDecodeError: If JSON string is invalid.
+            ValueError: If event type is invalid.
+        """
         return cls.from_dict(json.loads(json_str))
 
 
@@ -103,11 +135,21 @@ class EventSink:
     """Base class for event output destinations."""
 
     async def write(self, event: Event) -> None:
-        """Write an event to the sink."""
+        """Write an event to the sink.
+        
+        Args:
+            event: Event to write to the sink.
+            
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     async def close(self) -> None:
-        """Close the sink and flush any pending writes."""
+        """Close the sink and flush any pending writes.
+        
+        Default implementation does nothing. Subclasses should override if needed.
+        """
         pass
 
 
@@ -115,6 +157,11 @@ class JSONLSink(EventSink):
     """JSONL file sink for events."""
 
     def __init__(self, file_path: str | Path) -> None:
+        """Initialize JSONL sink with file path.
+        
+        Args:
+            file_path: Path to the JSONL file for writing events.
+        """
         self.file_path = Path(file_path)
         self._file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = None
 
