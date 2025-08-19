@@ -1,26 +1,20 @@
-"""Agent Orchestra - Universal Multi-Agent Orchestrator.
+"""Agent Orchestra - Sidecar extension for mcp-use with state management, policy enforcement, and telemetry."""
 
-The easiest way to create and orchestrate multi-agent fleets using MCP-USE.
-"""
+from .sidecar_client import SidecarMCPClient
+from .sidecar_agent import SidecarMCPAgent
+from .sidecar_session import SidecarSession
 
-from agent_orchestra.checkpointer import Checkpointer
-from agent_orchestra.events import Event, EventType
-from agent_orchestra.graph import Graph, GraphSpec
-from agent_orchestra.nodes import CompositeNode, Node
-from agent_orchestra.orchestrator import Orchestrator
-from agent_orchestra.policy import Budget, Policy
+# Adapter is optional - only available if mcp-use is installed
+try:
+    from .sidecar_adapter import SidecarLangChainAdapter
+except ImportError:
+    SidecarLangChainAdapter = None  # type: ignore
 
 __version__ = "0.1.0"
-__all__ = [
-    "Orchestrator",
-    "Graph",
-    "GraphSpec",
-    "Node",
-    "CompositeNode",
-    "Event",
-    "EventType",
-    "Checkpointer",
-    "Budget",
-    "Policy",
-]
 
+__all__ = [
+    "SidecarMCPClient",
+    "SidecarMCPAgent", 
+    "SidecarSession",
+    "SidecarLangChainAdapter",
+]

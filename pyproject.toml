@@ -1,78 +1,50 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-orchestra"
 version = "0.1.0"
-description = "Universal Multi-Agent Orchestrator - The easiest way to create and orchestrate multi-agent fleets"
-authors = [{name = "Agent Orchestra Contributors", email = "contributors@agent-orchestra.dev"}]
-license = {text = "MIT"}
+description = "Enterprise enhancements for mcp-use with telemetry, policy enforcement, and observability"
 readme = "README.md"
-requires-python = ">=3.11"
-keywords = ["agent", "orchestrator", "mcp", "multi-agent", "ai", "automation"]
-dependencies = [
-    "mcp-use==1.3.10",
-    "langchain-openai>=0.1.0",
-    "langchain-anthropic>=0.1.0",
-    "sqlmodel>=0.0.14",
-    "alembic>=1.13.0",
-    "asyncio>=3.4.3",
-    "aiofiles>=23.2.0",
-    "pydantic>=2.5.0",
-    "jinja2>=3.1.0",
-    "click>=8.1.0",
-    "opentelemetry-api>=1.20.0",
-    "opentelemetry-sdk>=1.20.0",
-    "PyYAML>=6.0",
-    "jsonschema>=4.0.0",
+license = {text = "MIT"}
+authors = [
+    {name = "Agent Orchestra Contributors"}
 ]
+keywords = ["mcp", "ai", "agents", "telemetry", "policy", "observability"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
 ]
+dependencies = [
+    "mcp-use>=0.1.0",
+    "typing-extensions>=4.0.0",
+]
+requires-python = ">=3.8"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
+    "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0",
-    "build>=0.10",
-    "twine>=4.0",
-]
-mcp-use = [
-    "mcp-use[search]==1.3.10",  # Include fastembed for Server Manager
-]
-redis = [
-    "redis>=5.0.0",
-    "rq>=1.15.0",
-]
-postgres = [
-    "psycopg[binary]>=3.1.0",
-    "pgvector>=0.2.0",
-]
-otel = [
-    "opentelemetry-exporter-jaeger>=1.20.0",
-    "opentelemetry-instrumentation>=0.41b0",
-]
-vector = [
-    "chromadb>=0.4.0",
-    "sentence-transformers>=2.2.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
 ]
 
-[project.scripts]
-catenas = "agent_orchestra.cli:main"
-
-[project.entry-points."agent_orchestra.adapters"]
-mcp_use = "agent_orchestra.adapters.mcp_use:MCPUseAdapter"
+[project.urls]
+Homepage = "https://github.com/agent-orchestra/agent-orchestra"
+Repository = "https://github.com/agent-orchestra/agent-orchestra"
+Issues = "https://github.com/agent-orchestra/agent-orchestra/issues"
+Documentation = "https://github.com/agent-orchestra/agent-orchestra/blob/main/README.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -80,24 +52,20 @@ where = ["src"]
 [tool.setuptools.package-data]
 agent_orchestra = ["py.typed"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
+[tool.setuptools.package-dir]
+"" = "src"
 
-[tool.ruff]
-line-length = 100
-target-version = "py311"
+[tool.black]
+line-length = 88
+target-version = ['py38']
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
-ignore = ["N806"]  # Allow non-lowercase variable names in functions
+[tool.isort]
+profile = "black"
+line_length = 88
 
 [tool.mypy]
-python_version = "3.11"
-strict = true
-warn_return_any = true
+python_version = "3.9"
+strict = false
+warn_return_any = false
 warn_unused_configs = true
-disallow_untyped_defs = true
+ignore_missing_imports = true

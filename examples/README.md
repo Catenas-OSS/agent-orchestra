@@ -1,72 +1,91 @@
 # Agent Orchestra Examples
 
-This directory contains example configurations demonstrating Agent Orchestra capabilities with mcp-use integration.
+This directory contains examples showing how to use Agent Orchestra as a drop-in replacement for mcp-use with enhanced enterprise features.
 
-## Quick Start
+## Prerequisites
 
 ```bash
-# Basic hello world workflow
-python -m agent_orchestra.cli run examples/hello_world.json \
-  --tools examples/simple_working_tools.yaml \
-  --agents examples/agents/
-
-# Demo with custom configurations  
-python examples/demo.py
+# Install dependencies
+pip install mcp-use
+npm install -g @modelcontextprotocol/server-filesystem
 ```
 
-## Example Files
+## Examples
 
-### Workflows
-- `hello_world.json` - 5-node workflow demonstrating basic orchestration
-- `simple_graph.json` - Minimal 2-node workflow for testing
+### 📋 `basic_usage.py`
+**Simple getting started example**
 
-### Tools Configuration
-- `simple_working_tools.yaml` - Basic STDIO MCP server setup
-- `http_tools.yaml` - HTTP/SSE transport examples
-- `tools_with_readiness.yaml` - Server health check configurations
+Shows basic Agent Orchestra usage with telemetry and policy features.
 
-### Agent Configurations (`agents/`)
-- `executor@v1.yaml` - General-purpose execution agent
-- `planner@v1.yaml` - Strategic planning agent  
-- `researcher@v1.yaml` - Research and analysis agent
-- `writer@v1.yaml` - Content generation agent
-- `judge@v1.yaml` - Evaluation and scoring agent
-- `simple@v1.yaml` - Basic agent for testing
-- `restricted@v1.yaml` - Agent with tool access controls
-- `simple_no_manager@v1.yaml` - Agent without Server Manager
-
-## Transport Types
-
-### STDIO (Default)
-```yaml
-mcpServers:
-  my_server:
-    command: "npx"
-    args: ["@modelcontextprotocol/server-everything"]
-```
-
-### HTTP/SSE  
-```yaml
-mcpServers:
-  api_server:
-    url: "https://api.example.com/mcp"
-    headers:
-      Authorization: "Bearer ${API_TOKEN}"
-    timeout_s: 30
-```
-
-## Agent Features
-
-- **Server Manager**: Dynamic tool discovery with semantic search
-- **Tool Access Control**: Allow/disallow lists with precedence rules
-- **Streaming Support**: Real-time execution monitoring
-- **Caching**: Performance optimization for repeated operations
-- **Readiness Probing**: Health checks with configurable timeouts
-
-## Environment Variables
-
-Set these before running:
 ```bash
-export OPENAI_API_KEY="your-key-here"
-export API_TOKEN="your-api-token"  # If using HTTP examples
+python3 basic_usage.py
 ```
+
+### 🔒 `policy_enforcement.py` 
+**Policy and safety demonstration**
+
+Shows how Agent Orchestra enforces tool usage policies while maintaining mcp-use compatibility.
+
+```bash
+python3 policy_enforcement.py
+```
+
+### 🏗️ `basic_mcp_example.py`
+**Real MCP servers example**
+
+Complete example using actual MCP servers with enhanced features.
+
+```bash
+python3 basic_mcp_example.py
+```
+
+### 🧪 `full_compatibility_test.py`
+**Compatibility validation**
+
+Comprehensive test validating 100% API compatibility with mcp-use.
+
+```bash
+python3 full_compatibility_test.py
+```
+
+## Key Features
+
+### Drop-in Compatibility
+```python
+# Same API as mcp-use
+from agent_orchestra import SidecarMCPClient, SidecarMCPAgent
+
+client = SidecarMCPClient.from_dict(config)
+agent = SidecarMCPAgent(client=client, model="gpt-4o")
+result = await agent.run("Your query")
+```
+
+### Enhanced Features
+```python
+# Add telemetry and policies
+client = SidecarMCPClient.from_dict(config,
+    telemetry=my_telemetry,
+    policy={"disallowed_tools": ["dangerous_tool"]}
+)
+```
+
+## Migration from mcp-use
+
+1. **Change imports:**
+   ```python
+   # Before
+   from mcp_use import MCPClient, MCPAgent
+   
+   # After  
+   from agent_orchestra import SidecarMCPClient, SidecarMCPAgent
+   ```
+
+2. **Optionally add sidecar config:**
+   ```python
+   config["sidecar"] = {
+       "policy": {"disallowed_tools": ["risky_tool"]},
+       "run_context": {"environment": "production"}
+   }
+   ```
+
+3. **All existing code works unchanged**

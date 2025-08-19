@@ -1,7 +1,0 @@
-id: "restricted@v1"
-model: "openai:gpt-4o-mini"
-instructions: "You are a restricted agent with limited tool access."
-max_steps: 5
-use_server_manager: true
-allowed_tools: ["web_search", "file_read"]  # Only these tools allowed
-# Note: disallowed_tools would be ignored due to allow-list precedence
