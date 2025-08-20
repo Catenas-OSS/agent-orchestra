@@ -152,8 +152,12 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
         })
         
         try:
-            # Execute parent run method with same signature as mcp-use
-            result = await super().run(message, **kwargs)
+            # Filter out server_name from kwargs before passing to parent
+            # since the base MCPAgent doesn't support it
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'server_name'}
+            
+            # Execute parent run method with filtered kwargs
+            result = await super().run(message, **filtered_kwargs)
             
             # Emit success telemetry
             self._emit_telemetry("agent_run_success", {
@@ -220,6 +224,8 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
         """
         # Extract server_name for telemetry but don't pass to parent
         server_name = kwargs.get('server_name')
+        # Filter out server_name from kwargs before passing to parent
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'server_name'}
         
         return self._stream_with_telemetry(
             super().stream(
@@ -229,7 +235,7 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
                 external_history=external_history,
                 track_execution=track_execution,
                 output_schema=output_schema, # pyright: ignore[reportArgumentType]
-                **kwargs
+                **filtered_kwargs
             ), # pyright: ignore[reportArgumentType]
             "stream",
             query,
@@ -284,6 +290,8 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
         """
         # Extract server_name for telemetry but don't pass to parent
         server_name = kwargs.get('server_name')
+        # Filter out server_name from kwargs before passing to parent
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'server_name'}
         
         # Use parent's stream method (assuming it's async)
         stream_gen = super().stream(
@@ -293,7 +301,7 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
             external_history=external_history,
             track_execution=track_execution,
             output_schema=output_schema, # pyright: ignore[reportArgumentType]
-            **kwargs
+            **filtered_kwargs
         )
         
         async for chunk in self._stream_with_telemetry(
@@ -345,6 +353,8 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
             String chunks from the agent execution
         """
         server_name = kwargs.get('server_name')
+        # Filter out server_name from kwargs before passing to parent
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'server_name'}
         
         # Emit stream events start telemetry
         self._emit_telemetry("agent_stream_events_start", {
@@ -362,7 +372,7 @@ class SidecarMCPAgent(MCPAgent):  # pyright: ignore[reportInheritanceFromUntyped
                 max_steps=max_steps,
                 manage_connector=manage_connector,
                 external_history=external_history,
-                **kwargs
+                **filtered_kwargs
             ): # pyright: ignore[reportGeneralTypeIssues]
                 chunk_count += 1
                 
