@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent Orchestra Part 3 End-to-End Demo with Real MCP Integration
+Agentic Orchestra Part 3 End-to-End Demo with Real MCP Integration
 
 This example demonstrates the complete Part 3 orchestrator stack:
 - Real MCP server (filesystem)
@@ -76,7 +76,7 @@ async def run_end_to_end_demo():
         print("❌ Set OPENAI_API_KEY environment variable")
         return
     
-    print("🎭 Agent Orchestra Part 3 End-to-End Demo")
+    print("🎭 Agentic Orchestra Part 3 End-to-End Demo")
     print("=" * 60)
     
     # Create temporary directory for demo files
@@ -285,7 +285,7 @@ async def main():
         import traceback
         traceback.print_exc()
     
-    print(f"\n🎭 Agent Orchestra Part 3 demo complete!")
+    print(f"\n🎭 Agentic Orchestra Part 3 demo complete!")
 
 
 if __name__ == "__main__":

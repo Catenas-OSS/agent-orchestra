@@ -52,7 +52,7 @@ async def simple_mcp_orchestrator_test():
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         test_file = temp_dir / "test.txt"
-        test_file.write_text("Hello from Agent Orchestra!\nThis is a test file for MCP integration.")
+        test_file.write_text("Hello from Agentic Orchestra!\nThis is a test file for MCP integration.")
         
         print(f"📁 Test directory: {temp_dir}")
         print(f"📄 Test file: {test_file.name}")
@@ -181,7 +181,7 @@ async def simple_mcp_orchestrator_test():
             # Check if we got actual file content
             if "read_file" in node_outputs:
                 print(f"✅ File read operation completed")
-            elif any("Hello from Agent Orchestra" in str(output) for output in node_outputs.values()):
+            elif any("Hello from Agentic Orchestra" in str(output) for output in node_outputs.values()):
                 print(f"✅ File content found in outputs")
             else:
                 print(f"⚠️  File content validation inconclusive")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Multi-Agent Orchestrator Example
+Multi-Agentic Orchestrator Example
 
 Shows how to use different agents for different tasks within a single orchestrator workflow.
 Each agent has different MCP servers and capabilities.
@@ -132,7 +132,7 @@ agent_configs = {
     }
 }
 
-print("🎭 Multi-Agent Orchestrator Workflow Example")
+print("🎭 Multi-Agentic Orchestrator Workflow Example")
 print("=" * 50)
 
 workflow = create_multi_agent_workflow()

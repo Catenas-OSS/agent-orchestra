@@ -1,6 +1,6 @@
-# Contributing to Agent Orchestra
+# Contributing to Agentic Orchestra
 
-First off, thank you for considering contributing to Agent Orchestra! It's people like you that make open source such a great community.
+First off, thank you for considering contributing to Agentic Orchestra! It's people like you that make open source such a great community.
 
 We welcome any and all contributions, from bug reports to feature requests and code contributions.
 

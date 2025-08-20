@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Restaurant Search Orchestrator Demo - Multi-layered Agent Orchestra Example
+Restaurant Search Orchestrator Demo - Multi-layered Agentic Orchestra Example
 
 This example demonstrates a sophisticated restaurant discovery workflow using:
 - Playwright MCP server for web scraping
@@ -71,7 +71,7 @@ async def run_restaurant_orchestrator_demo():
         }
     }
     
-    # Initialize the Agent Orchestra stack
+    # Initialize the Agentic Orchestra stack
     client = SidecarMCPClient.from_dict(config)
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)  # Low temp for consistent results
     agent = SidecarMCPAgent(llm=llm, client=client, max_steps=8)
@@ -302,7 +302,7 @@ async def main():
         traceback.print_exc()
     
     print(f"\n🍽️  Restaurant Orchestrator demo complete!")
-    print(f"💡 This demo shows how Agent Orchestra orchestrates complex")
+    print(f"💡 This demo shows how Agentic Orchestra orchestrates complex")
     print(f"   multi-step workflows with real MCP server integration!")
 
 

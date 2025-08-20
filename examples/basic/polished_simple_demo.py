@@ -104,7 +104,7 @@ async def run_polished_simple_demo():
         print("❌ Set OPENAI_API_KEY environment variable")
         return
     
-    print("🌟 Polished Simple Demo - Production-Ready Agent Orchestra")
+    print("🌟 Polished Simple Demo - Production-Ready Agentic Orchestra")
     print("=" * 65)
     print("✅ All polish improvements demonstrated without complex MCP setup")
     print()
@@ -293,7 +293,7 @@ async def main():
         traceback.print_exc()
     
     print(f"\n🚀 Polished simple demo complete!")
-    print(f"💡 This demonstrates production-ready Agent Orchestra with")
+    print(f"💡 This demonstrates production-ready Agentic Orchestra with")
     print(f"   all polish improvements for real-world deployment!")
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo script showing Agent Orchestra streaming orchestrator functionality.
+Demo script showing Agentic Orchestra streaming orchestrator functionality.
 
 This example demonstrates how to use the new run_streaming() method with 
 AGENT_CHUNK events for real-time monitoring of agent execution.
@@ -54,7 +54,7 @@ class MockStreamingExecutor:
 
 async def demo_streaming_orchestrator():
     """Demonstrate streaming orchestrator with real-time events."""
-    print("🎭 Agent Orchestra Streaming Orchestrator Demo")
+    print("🎭 Agentic Orchestra Streaming Orchestrator Demo")
     print("=" * 50)
     
     # Create a streaming executor
@@ -176,7 +176,7 @@ async def main():
     await demo_streaming_orchestrator()
     await demo_fallback_behavior()
     
-    print(f"\n🎭 Agent Orchestra streaming demo complete!")
+    print(f"\n🎭 Agentic Orchestra streaming demo complete!")
     print(f"💡 Key features demonstrated:")
     print(f"   ✅ Real-time AGENT_CHUNK events")
     print(f"   ✅ Clean separation of concerns (executor vs orchestrator)")

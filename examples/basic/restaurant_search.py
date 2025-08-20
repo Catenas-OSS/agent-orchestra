@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Restaurant Search Example - Agent Orchestra Version
+Restaurant Search Example - Agentic Orchestra Version
 
 This is the exact same example as the original mcp-use version,
-but using Agent Orchestra sidecar imports for enhanced features.
+but using Agentic Orchestra sidecar imports for enhanced features.
 """
 
 import asyncio

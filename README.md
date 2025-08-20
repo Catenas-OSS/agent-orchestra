@@ -1,10 +1,10 @@
-# Agent Orchestra: Production-Ready Multi-Agent Orchestration Platform
+# Agentic Orchestra: Production-Ready Multi-Agentic Orchestration Platform
 
-**Agent Orchestra** is a production-grade, open-source framework for building sophisticated multi-agent workflows with enterprise-level features. Built on top of the Model Context Protocol (MCP), it provides advanced orchestration, rate limiting, agent pooling, and comprehensive observability for real-world AI applications.
+**Agentic Orchestra** is a production-grade, open-source framework for building sophisticated multi-agent workflows with enterprise-level features. Built on top of the Model Context Protocol (MCP), it provides advanced orchestration, rate limiting, agent pooling, and comprehensive observability for real-world AI applications.
 
 ## 🚀 **Production-Ready Features**
 
-Agent Orchestra has been battle-tested and includes all the polish improvements needed for real-world deployment:
+Agentic Orchestra has been battle-tested and includes all the polish improvements needed for real-world deployment:
 
 - **🏊 Profile-Based Agent Pooling** - Intelligent agent reuse with race-safe creation and no duplicate initialization
 - **⚡ Global Rate Limiting** - Per-model RPM/RPD limits with 429-aware retries and jittered exponential backoff  
@@ -84,9 +84,9 @@ Drop-in replacement for `mcp-use` MCPAgent with:
 - Node.js 18+ (for MCP servers)
 - OpenAI API key (or other LLM provider)
 
-### Install Agent Orchestra
+### Install Agentic Orchestra
 ```bash
-pip install agent-orchestra
+pip install agentic-orchestra
 ```
 
 ### Install MCP Servers
@@ -306,7 +306,7 @@ The `examples/` directory contains production-ready demonstrations:
 
 ## 🧪 **Testing**
 
-Agent Orchestra includes comprehensive test coverage:
+Agentic Orchestra includes comprehensive test coverage:
 
 ```bash
 # Run all tests
@@ -393,7 +393,7 @@ except ValueError as e:
 ```
 
 ### **Parameter Filtering**
-Agent Orchestra automatically filters potentially unsafe parameters before passing them to underlying MCP agents, ensuring backward compatibility while maintaining security.
+Agentic Orchestra automatically filters potentially unsafe parameters before passing them to underlying MCP agents, ensuring backward compatibility while maintaining security.
 
 ## 📈 **Performance & Monitoring**
 
@@ -424,7 +424,7 @@ async for event in orchestrator.run_streaming(workflow, run_spec):
 
 ## 🤝 **Migration from mcp-use**
 
-Agent Orchestra is designed as a drop-in replacement. To migrate:
+Agentic Orchestra is designed as a drop-in replacement. To migrate:
 
 1. **Replace imports:**
    ```python
@@ -463,7 +463,7 @@ Agent Orchestra is designed as a drop-in replacement. To migrate:
 
 ## 🎯 **Production Readiness Checklist**
 
-Agent Orchestra has been thoroughly tested and includes all features needed for production deployment:
+Agentic Orchestra has been thoroughly tested and includes all features needed for production deployment:
 
 - ✅ **Race-safe agent creation** with double-checked locking
 - ✅ **Global rate limiting** with 429-aware retries
@@ -480,8 +480,8 @@ Agent Orchestra has been thoroughly tested and includes all features needed for 
 
 ### **Setup Development Environment**
 ```bash
-git clone https://github.com/your-org/agent-orchestra
-cd agent-orchestra
+git clone https://github.com/your-org/agentic-orchestra
+cd agentic-orchestra
 pip install -e .
 pip install -r requirements-dev.txt
 ```
@@ -500,7 +500,7 @@ mypy src/agent_orchestra/       # Type checking
 
 ## 📄 **License**
 
-Agent Orchestra is licensed under the [MIT License](LICENSE).
+Agentic Orchestra is licensed under the [MIT License](LICENSE).
 
 ## 🙏 **Contributing**
 
@@ -525,6 +525,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ---
 
-**Agent Orchestra: Production-Ready Multi-Agent Orchestration** 🎼
+**Agentic Orchestra: Production-Ready Multi-Agentic Orchestration** 🎼
 
 *Built for enterprises, loved by developers.*

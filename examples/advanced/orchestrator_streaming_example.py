@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent Orchestra Streaming Orchestrator Example
+Agentic Orchestra Streaming Orchestrator Example
 
 This example demonstrates the streaming orchestrator functionality with real MCP servers.
 Shows how to use run_streaming() to get real-time AGENT_CHUNK events during execution.
@@ -33,13 +33,13 @@ async def main():
         print("❌ Set OPENAI_API_KEY environment variable")
         return
     
-    print("🎭 Agent Orchestra Streaming Orchestrator")
+    print("🎭 Agentic Orchestra Streaming Orchestrator")
     print("=" * 50)
     
     # Create temp directory with test files (like the working example)
     temp_dir = tempfile.mkdtemp()
     test_dir = Path(temp_dir)
-    (test_dir / "hello.txt").write_text("Hello from Agent Orchestra!")
+    (test_dir / "hello.txt").write_text("Hello from Agentic Orchestra!")
     (test_dir / "data.json").write_text('{"project": "agent-orchestra", "status": "testing"}')
     
     print(f"📁 Test files created in: {temp_dir}")

@@ -1,6 +1,6 @@
-# 🚀 Agent Orchestra Release Checklist
+# 🚀 Agentic Orchestra Release Checklist
 
-This checklist is intended to be used as a guide for preparing a new release of Agent Orchestra.
+This checklist is intended to be used as a guide for preparing a new release of Agentic Orchestra.
 
 ## ✅ Pre-Release Validation
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent Orchestrator Demo - Real Agent + MCP Integration
+Agentic Orchestrator Demo - Real Agent + MCP Integration
 
 This example demonstrates all Part 3 orchestrator features with REAL agents and MCP servers.
 Uses a reliable approach that actually invokes agents for each task.
@@ -146,7 +146,7 @@ async def run_agent_orchestrator_demo():
         print("❌ Set OPENAI_API_KEY environment variable")
         return
     
-    print("🤖 Agent Orchestrator Demo - Real Agents + MCP")
+    print("🤖 Agentic Orchestrator Demo - Real Agents + MCP")
     print("=" * 60)
     print("🎯 All Part 3 features with actual agent execution")
     print("🔧 Using filesystem MCP server with business data")
@@ -376,7 +376,7 @@ async def main():
         import traceback
         traceback.print_exc()
     
-    print(f"\n🤖 Agent Orchestrator Demo complete!")
+    print(f"\n🤖 Agentic Orchestrator Demo complete!")
     print(f"💡 This demo shows real agents executing every orchestrator node")
     print(f"   with actual MCP tool usage and file operations!")
 

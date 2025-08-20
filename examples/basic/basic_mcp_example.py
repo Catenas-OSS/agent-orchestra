@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Basic MCP Agent + Server example using Agent Orchestra.
-This demonstrates how to use Agent Orchestra as a drop-in replacement for mcp-use.
+Basic MCP Agent + Server example using Agentic Orchestra.
+This demonstrates how to use Agentic Orchestra as a drop-in replacement for mcp-use.
 
 This example:
 1. Sets up MCP servers (filesystem and brave search)
-2. Creates an Agent Orchestra client (with sidecar features)
+2. Creates an Agentic Orchestra client (with sidecar features)
 3. Uses the agent to interact with the servers
 4. Shows telemetry and policy enforcement in action
 """
@@ -37,12 +37,12 @@ class SimpleTelemetry:
 
 
 async def main() -> None:
-    """Demonstrate Agent Orchestra usage identical to mcp-use."""
+    """Demonstrate Agentic Orchestra usage identical to mcp-use."""
     
     # Load environment variables
     load_dotenv()
     
-    print("🎭 Agent Orchestra - Basic MCP Example")
+    print("🎭 Agentic Orchestra - Basic MCP Example")
     print("=" * 60)
     
     # Create a temporary config file (like you would with mcp-use)
@@ -60,7 +60,7 @@ async def main() -> None:
                 }
             }
         },
-        # Agent Orchestra sidecar configuration (optional)
+        # Agentic Orchestra sidecar configuration (optional)
         "sidecar": {
             "policy": {
                 "disallowed_tools": ["file_delete"]  # Safety: don't allow file deletion
@@ -87,7 +87,7 @@ async def main() -> None:
         print("\n🔧 Creating MCP Client...")
         client = SidecarMCPClient.from_config_file(
             config_path,
-            telemetry=telemetry  # Agent Orchestra enhancement
+            telemetry=telemetry  # Agentic Orchestra enhancement
         )
         client: SidecarMCPClient = client
 
@@ -113,7 +113,7 @@ async def main() -> None:
         agent = SidecarMCPAgent(
             llm=llm,
             client=client,
-            sidecar_telemetry=telemetry,  # Agent Orchestra enhancement
+            sidecar_telemetry=telemetry,  # Agentic Orchestra enhancement
             sidecar_run_context={
                 "task": "filesystem_demo",
                 "timestamp": "2024-01-01"
@@ -129,7 +129,7 @@ async def main() -> None:
         # Example 1: File operations
         try:
             result = await agent.run(
-                "Create a simple text file called 'hello.txt' with the content 'Hello from Agent Orchestra!'"
+                "Create a simple text file called 'hello.txt' with the content 'Hello from Agentic Orchestra!'"
             )
             print(f"📁 File operation result: {str(result)[:100]}...")
 
@@ -166,20 +166,20 @@ async def main() -> None:
         print("\n💡 Note: This example requires MCP servers to be installed:")
         print("   npm install -g @modelcontextprotocol/server-filesystem")
         print("   npm install -g @modelcontextprotocol/server-brave-search")
-        print("\n🚀 But Agent Orchestra API compatibility is demonstrated!")
+        print("\n🚀 But Agentic Orchestra API compatibility is demonstrated!")
 
     finally:
         # Clean up config file
         Path(config_path).unlink(missing_ok=True)
     
-    # Show telemetry results (Agent Orchestra enhancement)
+    # Show telemetry results (Agentic Orchestra enhancement)
     print(f"\n📊 Telemetry Summary:")
     print(f"   Total events captured: {len(telemetry.events)}")
     event_types: Set[Any] = set(event['event_type'] for event in telemetry.events)
     print(f"   Event types: {event_types}")
     
     print("\n🎉 Example completed!")
-    print("🚀 Agent Orchestra provides 100% mcp-use compatibility")
+    print("🚀 Agentic Orchestra provides 100% mcp-use compatibility")
     print("✨ Plus enhanced telemetry, safety, and extensibility!")
 
 

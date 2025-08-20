@@ -3,7 +3,7 @@
 Enhanced Restaurant Search Example - With Sidecar Features
 
 Same restaurant search, but with enhanced telemetry, policy enforcement,
-and observability features provided by Agent Orchestra.
+and observability features provided by Agentic Orchestra.
 """
 
 import asyncio
@@ -79,7 +79,7 @@ async def main() -> None:
     # Create enhanced SidecarMCPClient with telemetry
     client = SidecarMCPClient.from_dict(config, telemetry=telemetry)
 
-    print("🎭 Agent Orchestra - Enhanced Restaurant Search")
+    print("🎭 Agentic Orchestra - Enhanced Restaurant Search")
     print("=" * 50)
 
     # Create LLM

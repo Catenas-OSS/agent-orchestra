@@ -2,7 +2,7 @@
 """
 Upgrade to Part 4 Example - Migration Guide
 
-This example shows how to upgrade existing Agent Orchestra code
+This example shows how to upgrade existing Agentic Orchestra code
 from Parts 1-3 to use Part 4 features (CallBroker + AgentPool).
 
 The upgrade is completely optional and backward compatible!
@@ -65,7 +65,7 @@ async def basic_orchestrator_example():
 
 async def mcp_agent_example():
     """Example with MCP agents but without Part 4 features."""
-    print("🤖 BEFORE: MCP Agent Orchestrator (No Part 4)")
+    print("🤖 BEFORE: MCP Agentic Orchestrator (No Part 4)")
     print("-" * 40)
     
     # Simulated MCP agent (would be real SidecarMCPAgent in practice)
@@ -302,7 +302,7 @@ async def migration_tips():
 
 async def main():
     """Main demonstration of upgrade path."""
-    print("🎯 Agent Orchestra: Parts 1-3 → Part 4 Upgrade Guide")
+    print("🎯 Agentic Orchestra: Parts 1-3 → Part 4 Upgrade Guide")
     print("=" * 60)
     print("Demonstrates backward compatibility and easy migration path\n")
     
@@ -330,7 +330,7 @@ async def main():
         import traceback
         traceback.print_exc()
     
-    print(f"\n🚀 Agent Orchestra upgrade demo complete!")
+    print(f"\n🚀 Agentic Orchestra upgrade demo complete!")
     print(f"💡 Part 4 provides production-ready orchestration with")
     print(f"   rate limiting, agent pooling, and reliability features!")
 

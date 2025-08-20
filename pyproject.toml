@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-orchestra"
+name = "agentic-orchestra"
 version = "0.1.0"
 description = "The easiest way to create and orchestrate multi-agent fleets"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Agent Orchestra Contributors"}
+    {name = "Agentic Orchestra Contributors"}
 ]
 keywords = ["mcp", "ai", "agents", "telemetry", "policy", "observability", "orchestration"]
 classifiers = [
@@ -42,10 +42,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/agent-orchestra/agent-orchestra"
-Repository = "https://github.com/agent-orchestra/agent-orchestra"
-Issues = "https://github.com/agent-orchestra/agent-orchestra/issues"
-Documentation = "https://github.com/agent-orchestra/agent-orchestra/blob/main/README.md"
+Homepage = "https://github.com/Catenas-OSS/agent-orchestra"
+Repository = "https://github.com/Catenas-OSS/agent-orchestra"
+Issues = "https://github.com/Catenas-OSS/agent-orchestra/issues"
+Documentation = "https://github.com/Catenas-OSS/agent-orchestra/blob/main/README.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,7 +71,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 strict = false
 warn_return_any = false
 warn_unused_configs = true

@@ -176,7 +176,7 @@ async def run_data_analysis_orchestrator():
             }
         }
         
-        # Initialize the Agent Orchestra stack
+        # Initialize the Agentic Orchestra stack
         client = SidecarMCPClient.from_dict(config)
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
         agent = SidecarMCPAgent(llm=llm, client=client, max_steps=6)
@@ -394,7 +394,7 @@ async def main():
         traceback.print_exc()
     
     print(f"\n📊 Data Analysis Orchestrator demo complete!")
-    print(f"💡 This demo shows how Agent Orchestra orchestrates complex")
+    print(f"💡 This demo shows how Agentic Orchestra orchestrates complex")
     print(f"   multi-layer business analysis workflows with real data!")
 
 

@@ -1,8 +1,8 @@
-# Agent Orchestra - Claude Assistant Documentation
+# Agentic Orchestra - Claude Assistant Documentation
 
 ## Project Overview
 
-**Agent Orchestra** is a Universal Multi-Agent Orchestrator that provides the easiest way to create and orchestrate multi-agent fleets using MCP-USE (Model Context Protocol). The project enables users to define complex workflows as directed acyclic graphs (DAGs) and execute them with full observability, checkpointing, and policy controls.
+**Agentic Orchestra** is a Universal Multi-Agentic Orchestrator that provides the easiest way to create and orchestrate multi-agent fleets using MCP-USE (Model Context Protocol). The project enables users to define complex workflows as directed acyclic graphs (DAGs) and execute them with full observability, checkpointing, and policy controls.
 
 ### Key Features
 - 🔌 **MCP-USE Integration**: Seamless integration with mcp-use for agent management

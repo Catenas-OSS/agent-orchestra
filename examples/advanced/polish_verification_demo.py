@@ -257,7 +257,7 @@ async def demo_rate_limiting():
 
 async def main():
     """Run all polish improvement demos."""
-    print("🌟 Agent Orchestra - Polish Improvements Verification")
+    print("🌟 Agentic Orchestra - Polish Improvements Verification")
     print("=" * 65)
     print("🎯 Demonstrating all production-ready improvements")
     print()
@@ -278,7 +278,7 @@ async def main():
         print("✅ Path validation and safety - Directory traversal prevention")
         print("✅ Global rate limiting - Shared limits across all agents")
         print()
-        print("🚀 Agent Orchestra is production-ready with all improvements!")
+        print("🚀 Agentic Orchestra is production-ready with all improvements!")
         
     except KeyboardInterrupt:
         print("\n⏹️  Demo interrupted")
