@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-orchestra"
 version = "0.1.0"
-description = "Enterprise enhancements for mcp-use with telemetry, policy enforcement, and observability"
+description = "The easiest way to create and orchestrate multi-agent fleets"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Agent Orchestra Contributors"}
 ]
-keywords = ["mcp", "ai", "agents", "telemetry", "policy", "observability"]
+keywords = ["mcp", "ai", "agents", "telemetry", "policy", "observability", "orchestration"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
