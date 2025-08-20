@@ -7,22 +7,44 @@ import logging
 from .types import Event, GraphSpec, NodeSpec, RunSpec
 from .executors import Executor
 from .utils import topo_sort
+from .signature import node_signature, foreach_item_signature
+from .store import RunStore, SavedNode, SavedForeachItem
 
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
-    def __init__(self, executor: Executor):
+    def __init__(self, executor: Executor, store: Optional[RunStore] = None):
         self._executor = executor
+        self._store = store
         self._event_seq = 0
+        self._gate_pruned_nodes: Set[str] = set()
+        self._server_configs: Optional[Dict[str, Any]] = None
 
     def _next_event_seq(self) -> int:
         """Generate monotonic event sequence for deterministic logging."""
         self._event_seq += 1
         return self._event_seq
 
-    def _emit_event(self, event_type: str, run_id: str, node_id: Optional[str] = None, 
-                   data: Optional[Dict[str, Any]] = None) -> Event:
-        """Create event with sequence number."""
+    async def _emit_event(self, event_type: str, run_spec: RunSpec, node: Optional[NodeSpec] = None, 
+                         data: Optional[Dict[str, Any]] = None) -> AsyncGenerator[Event, None]:
+        """Create and emit event with persistence support."""
+        event = Event(
+            type=event_type,  # type: ignore
+            run_id=run_spec.run_id,
+            node_id=node.id if node else None,
+            data=data or {},
+            event_seq=self._next_event_seq()
+        )
+        
+        # Persist event if store available
+        if self._store:
+            await self._store.append_event(run_spec.run_id, event)
+        
+        yield event
+
+    def _emit_event_sync(self, event_type: str, run_id: str, node_id: Optional[str] = None, 
+                        data: Optional[Dict[str, Any]] = None) -> Event:
+        """Create event with sequence number (backward compatibility helper)."""
         return Event(
             type=event_type,  # type: ignore
             run_id=run_id,
@@ -31,12 +53,28 @@ class Orchestrator:
             event_seq=self._next_event_seq()
         )
 
+    async def _run_node_enhanced(self, node: NodeSpec, ctx: Dict[str, Any], run: RunSpec, 
+                                stream: bool = False) -> AsyncGenerator[Event, None]:
+        """Enhanced node execution with persistence support, wrapping existing logic."""
+        
+        # Create a wrapper that intercepts events and persists them
+        async def event_wrapper(events_generator):
+            async for event in events_generator:
+                # Persist event if store available
+                if self._store:
+                    await self._store.append_event(run.run_id, event)
+                yield event
+        
+        # Use existing node execution logic with event wrapping
+        async for event in event_wrapper(self._run_node(node, ctx, run, stream)):
+            yield event
+
     async def _run_node(self, node: NodeSpec, ctx: Dict[str, Any], run: RunSpec, 
                        stream: bool = False) -> AsyncGenerator[Event, None]:
         """Execute a single node with retry logic, timeout, and streaming support."""
         
         # Emit NODE_START event
-        yield self._emit_event("NODE_START", run.run_id, node.id, {
+        yield self._emit_event_sync("NODE_START", run.run_id, node.id, {
             "type": node.type, 
             "phase": f"{node.type}:start"
         })
@@ -55,7 +93,7 @@ class Orchestrator:
             async for event in self._run_gate_node(node, ctx, run, stream):
                 yield event
         else:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": f"Unknown node type: {node.type}"
             })
 
@@ -110,15 +148,15 @@ class Orchestrator:
                 if node.timeout_s:
                     try:
                         async for chunk in self._timeout_iterator(stream_generator, node.timeout_s): # type: ignore
-                            yield self._emit_event("AGENT_CHUNK", run.run_id, node.id, chunk) # type: ignore
+                            yield self._emit_event_sync("AGENT_CHUNK", run.run_id, node.id, chunk) # type: ignore
                     except asyncio.TimeoutError:
-                        yield self._emit_event("ERROR", run.run_id, node.id, {"error": f"Node execution timed out after {node.timeout_s} seconds"})
+                        yield self._emit_event_sync("ERROR", run.run_id, node.id, {"error": f"Node execution timed out after {node.timeout_s} seconds"})
                         return
                 else:
                     async for chunk in stream_generator:
-                        yield self._emit_event("AGENT_CHUNK", run.run_id, node.id, chunk)
+                        yield self._emit_event_sync("AGENT_CHUNK", run.run_id, node.id, chunk)
                 
-                yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                     "output_meta": list(ctx["blackboard"].get(node.id, {}).keys()),
                     "phase": "task:complete"
                 })
@@ -129,13 +167,13 @@ class Orchestrator:
                     result = await execute_with_retry_regular()
                 
                 ctx["blackboard"][node.id] = {"result": result, "source": node.id}
-                yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                     "output_meta": list(ctx["blackboard"][node.id].keys()),
                     "phase": "task:complete"
                 })
 
         except Exception as e:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": repr(e), 
                 "phase": "task:error"
             })
@@ -191,26 +229,46 @@ class Orchestrator:
 
     async def _run_foreach_node(self, node: NodeSpec, ctx: Dict[str, Any], run: RunSpec, 
                                stream: bool = False) -> AsyncGenerator[Event, None]:
-        """Execute a foreach node with concurrency control."""
+        """Execute a foreach node with concurrency control and granular resume support."""
         items = node.inputs.get("items", [])
         if not isinstance(items, list):
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": "foreach node requires 'items' list in inputs"
             })
             return
         
-        yield self._emit_event("NODE_START", run.run_id, node.id, {
+        # Load existing foreach item results for granular resume
+        saved_items = {}
+        if self._store:
+            try:
+                saved_items = await self._store.load_foreach_items(run.run_id, node.id)
+            except Exception as e:
+                logger.warning(f"Failed to load foreach items for {node.id}: {e}")
+        
+        yield self._emit_event_sync("NODE_START", run.run_id, node.id, {
             "phase": "foreach:start", 
-            "item_count": len(items)
+            "item_count": len(items),
+            "cached_items": len(saved_items)
         })
         
-        results = []
+        results = [None] * len(items)  # Pre-allocate results array
         semaphore = asyncio.Semaphore(node.concurrency or len(items))
         
         # Use agent pool for foreach items if available, otherwise regular task execution
         async def process_item(item: Any, index: int) -> Any:
             async with semaphore:
-                # Create virtual sub-node
+                # Check if we have a cached result first (granular resume)
+                if index in saved_items:
+                    # Validate cached result by checking signature
+                    saved_item = saved_items[index]
+                    current_sig = foreach_item_signature(node, run, index, item, self._server_configs)
+                    
+                    if saved_item.signature == current_sig:
+                        # Cache hit - use saved result
+                        results[index] = saved_item.result
+                        return saved_item.result
+                
+                # Cache miss or signature mismatch - execute the item
                 sub_node = NodeSpec(
                     id=f"{node.id}:{index}",
                     type="task",
@@ -226,34 +284,55 @@ class Orchestrator:
                     if hasattr(self._executor, 'execute_foreach_item'):
                         result = await self._executor.execute_foreach_item(sub_node, ctx, index)
                         ctx["blackboard"][sub_node.id] = {"result": result, "source": sub_node.id}
-                        return result
                     else:
                         # Fallback to regular task execution
                         item_result = None
                         async for event in self._run_task_node(sub_node, ctx, run, stream=False):
                             if event.type == "NODE_COMPLETE":
                                 item_result = ctx["blackboard"].get(sub_node.id, {}).get("result")
-                        return item_result
+                        result = item_result
+                    
+                    # Save individual item result for future granular resume
+                    if self._store and result is not None:
+                        item_sig = foreach_item_signature(node, run, index, item, self._server_configs)
+                        saved_foreach_item = SavedForeachItem(node.id, index, item_sig, result)
+                        await self._store.save_foreach_item(run.run_id, saved_foreach_item)
+                    
+                    results[index] = result
+                    return result
+                    
                 except Exception as e:
                     if node.foreach_fail_policy == "fail_fast":
                         raise
                     else:  # skip
+                        results[index] = None
                         return None
         
         try:
             # Execute all items with asyncio.gather
             tasks = [process_item(item, i) for i, item in enumerate(items)]
-            results = await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)
             
-            ctx["blackboard"][node.id] = {"items": results, "source": node.id}
-            yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+            # Filter out None results if skip policy is used
+            final_results = [r for r in results if r is not None] if node.foreach_fail_policy == "skip" else results
+            
+            ctx["blackboard"][node.id] = {"items": final_results, "source": node.id}
+            
+            # Count cached vs executed items for reporting
+            cached_count = len([i for i in range(len(items)) if i in saved_items and 
+                              saved_items[i].signature == foreach_item_signature(node, run, i, items[i], self._server_configs)])
+            executed_count = len(items) - cached_count
+            
+            yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                 "output_meta": ["items", "source"],
                 "phase": "foreach:complete",
-                "item_count": len(results)
+                "item_count": len(final_results),
+                "cached_items": cached_count,
+                "executed_items": executed_count
             })
             
         except Exception as e:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": repr(e),
                 "phase": "foreach:error"
             })
@@ -273,7 +352,7 @@ class Orchestrator:
         values = []
         for from_id in from_ids:
             if from_id not in ctx["blackboard"]:
-                yield self._emit_event("ERROR", run.run_id, node.id, {
+                yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                     "error": f"Required input '{from_id}' not found in blackboard",
                     "phase": "reduce:validation_error"
                 })
@@ -330,13 +409,13 @@ class Orchestrator:
             
             # Store with proper format
             ctx["blackboard"][node.id] = {"reduced": result, "source": node.id}
-            yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+            yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                 "output_meta": ["reduced", "source"],
                 "phase": "reduce:complete"
             })
             
         except Exception as e:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": repr(e),
                 "phase": "reduce:error"
             })
@@ -346,7 +425,7 @@ class Orchestrator:
         """Execute a gate node for conditional flow control."""
         predicate = node.inputs.get("predicate")
         if predicate is None:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": "gate node requires 'predicate' in inputs"
             })
             return
@@ -358,80 +437,145 @@ class Orchestrator:
             ctx["blackboard"][node.id] = {"result": passed, "source": node.id}
             
             if passed:
-                yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                     "output_meta": ["result", "source"],
                     "phase": "gate:passed"
                 })
             else:
-                yield self._emit_event("NODE_COMPLETE", run.run_id, node.id, {
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
                     "output_meta": ["result", "source"],
                     "phase": "gate:blocked",
                     "skipped": True
                 })
                 
         except Exception as e:
-            yield self._emit_event("ERROR", run.run_id, node.id, {
+            yield self._emit_event_sync("ERROR", run.run_id, node.id, {
                 "error": repr(e),
                 "phase": "gate:error"
             })
 
-    async def run(self, graph: GraphSpec, run: RunSpec) -> AsyncGenerator[Event, None]:
+    async def run(self, graph: GraphSpec, run: RunSpec, *, resume: bool = False) -> AsyncGenerator[Event, None]:
         """Run orchestration with sequential execution (backward compatible)."""
-        async for event in self._run_orchestration(graph, run, stream=False):
+        async for event in self._run_orchestration(graph, run, stream=False, resume=resume):
             yield event
 
-    async def run_streaming(self, graph: GraphSpec, run: RunSpec) -> AsyncGenerator[Event, None]:
+    async def run_streaming(self, graph: GraphSpec, run: RunSpec, *, resume: bool = False) -> AsyncGenerator[Event, None]:
         """Run orchestration with streaming support."""
-        async for event in self._run_orchestration(graph, run, stream=True):
+        async for event in self._run_orchestration(graph, run, stream=True, resume=resume):
             yield event
 
-    async def _run_orchestration(self, graph: GraphSpec, run: RunSpec, stream: bool = False) -> AsyncGenerator[Event, None]:
-        """Core orchestration logic with concurrency support."""
+    async def _run_orchestration(self, graph: GraphSpec, run: RunSpec, stream: bool = False, resume: bool = False) -> AsyncGenerator[Event, None]:
+        """Enhanced orchestration with checkpoint persistence and resume support."""
         ctx: Dict[str, Any] = {"blackboard": {}, "_graph_edges": graph.edges}
-        skipped_nodes: Set[str] = set()
+        
+        # Initialize persistence and load checkpoints
+        checkpoint = {}
+        try:
+            if self._store:
+                await self._store.start_run(run.run_id, run)
+                if resume:
+                    checkpoint = await self._store.load_checkpoint(run.run_id)
+                    self._gate_pruned_nodes = await self._store.load_gate_pruning(run.run_id)
+                    # Resume event sequence continuity
+                    last_seq = await self._store.get_last_event_seq(run.run_id)
+                    if last_seq > self._event_seq:
+                        self._event_seq = last_seq
+                        
+        except Exception as e:
+            logger.error(f"Failed to initialize persistence for run {run.run_id}: {e}")
+            # Continue without persistence
         
         # Set run context on executor if it supports it (for agent pool management)
         if hasattr(self._executor, 'set_run_context'):
             self._executor.set_run_context(run.run_id)
         
-        yield self._emit_event("RUN_START", run.run_id, data={"goal": run.goal})
+        # Emit RUN_START
+        async for event in self._emit_event("RUN_START", run, data={"goal": run.goal, "resumed": resume}):
+            yield event
         
-        # Compute topological order
-        order = topo_sort(graph)
-        node_map: Dict[str, NodeSpec] = {n.id: n for n in graph.nodes}
-        
-        # Execute nodes in topological order
-        for node_id in order:
-            if node_id in skipped_nodes:
-                continue
-                
-            node = node_map[node_id]
+        try:
+            # Compute topological order and create node map
+            order = topo_sort(graph)
+            node_map: Dict[str, NodeSpec] = {n.id: n for n in graph.nodes}
             
-            try:
-                # Execute single node
-                gate_skipped = False
-                async for event in self._run_node(node, ctx, run, stream):
-                    yield event
+            # Execute nodes in topological order with resume support
+            for node_id in order:
+                if node_id in self._gate_pruned_nodes:
+                    continue  # Skip previously pruned nodes
                     
-                    # Check for gate that blocked flow
-                    if (event.type == "NODE_COMPLETE" and 
-                        event.data.get("phase") == "gate:blocked"):
-                        gate_skipped = True
+                node = node_map[node_id]
                 
-                # If gate blocked, skip all transitive successors
-                if gate_skipped:
-                    successors = self._get_transitive_successors(graph, node_id)
-                    skipped_nodes.update(successors)
+                # Compute node signature for caching
+                sig = node_signature(node, run, self._server_configs)
+                
+                # Check if we can resume from checkpoint
+                if node_id in checkpoint and checkpoint[node_id].signature == sig:
+                    # Resume: restore cached result
+                    ctx["blackboard"][node_id] = checkpoint[node_id].result
+                    async for event in self._emit_event("NODE_COMPLETE", run, node, 
+                                                       {"resumed": True, "signature": sig}):
+                        yield event
+                    continue
+                
+                try:
+                    # Execute node normally
+                    gate_blocked = False
+                    async for event in self._run_node_enhanced(node, ctx, run, stream):
+                        yield event
+                        
+                        # Check for gate that blocked flow
+                        if (event.type == "NODE_COMPLETE" and 
+                            event.data.get("phase") == "gate:blocked"):
+                            gate_blocked = True
                     
-            except Exception as e:
-                yield self._emit_event("ERROR", run.run_id, node_id, {"error": repr(e)})
-                return
-        
-        yield self._emit_event("RUN_COMPLETE", run.run_id, data={"result": ctx["blackboard"]})
-        
-        # Clean up agent pool if available
-        if hasattr(self._executor, '_agent_pool') and self._executor._agent_pool:
-            await self._executor._agent_pool.finish_run(run.run_id)
+                    # Save successful result to checkpoint
+                    if self._store and node_id in ctx["blackboard"]:
+                        saved_node = SavedNode(node_id, sig, ctx["blackboard"][node_id])
+                        await self._store.save_node_result(run.run_id, saved_node)
+                    
+                    # Handle gate pruning
+                    if gate_blocked:
+                        successors = self._get_transitive_successors(graph, node_id)
+                        self._gate_pruned_nodes.update(successors)
+                        
+                        # Persist gate pruning state
+                        if self._store:
+                            await self._store.save_gate_pruning(run.run_id, self._gate_pruned_nodes)
+                        
+                except Exception as e:
+                    # Emit error and mark run as failed
+                    async for event in self._emit_event("ERROR", run, node, {"error": repr(e)}):
+                        yield event
+                    
+                    if self._store:
+                        await self._store.mark_run_error(run.run_id, repr(e))
+                    return
+            
+            # Emit successful completion
+            async for event in self._emit_event("RUN_COMPLETE", run, data={"result": ctx["blackboard"]}):
+                yield event
+            
+            # Mark run as complete
+            if self._store:
+                await self._store.mark_run_complete(run.run_id)
+                
+        except asyncio.CancelledError:
+            # Handle cancellation
+            if self._store:
+                await self._store.mark_run_canceled(run.run_id)
+            raise
+        except Exception as e:
+            # Handle unexpected errors
+            async for event in self._emit_event("ERROR", run, data={"error": repr(e)}):
+                yield event
+            
+            if self._store:
+                await self._store.mark_run_error(run.run_id, repr(e))
+            return
+        finally:
+            # Clean up agent pool if available
+            if hasattr(self._executor, '_agent_pool') and self._executor._agent_pool:
+                await self._executor._agent_pool.finish_run(run.run_id)
 
     def _get_transitive_successors(self, graph: GraphSpec, node_id: str) -> Set[str]:
         """Get all transitive successors of a node."""
