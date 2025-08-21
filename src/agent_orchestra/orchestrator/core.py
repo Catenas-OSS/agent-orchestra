@@ -9,13 +9,15 @@ from .executors import Executor
 from .utils import topo_sort
 from .signature import node_signature, foreach_item_signature
 from .store import RunStore, SavedNode, SavedForeachItem
+from .store_factory import create_store
 
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
     def __init__(self, executor: Executor, store: Optional[RunStore] = None):
         self._executor = executor
-        self._store = store
+        # Auto-create store if none provided - defaults to SQLite for best performance
+        self._store = store if store is not None else create_store("sqlite")
         self._event_seq = 0
         self._gate_pruned_nodes: Set[str] = set()
         self._server_configs: Optional[Dict[str, Any]] = None

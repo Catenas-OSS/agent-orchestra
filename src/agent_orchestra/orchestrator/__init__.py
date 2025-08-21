@@ -19,6 +19,15 @@ from .broker_config import (
     get_config_by_name,
 )
 from .store import RunStore, JsonlRunStore, SavedNode, SavedForeachItem
+from .store_sqlite import SQLiteRunStore
+from .store_factory import (
+    create_store, 
+    create_development_store, 
+    create_production_store,
+    create_memory_store,
+    get_store_info,
+    validate_store_config
+)
 from .signature import node_signature, foreach_item_signature
 
 __all__ = [
@@ -42,8 +51,15 @@ __all__ = [
     "get_config_by_name",
     "RunStore",
     "JsonlRunStore", 
+    "SQLiteRunStore",
     "SavedNode",
     "SavedForeachItem",
+    "create_store",
+    "create_development_store",
+    "create_production_store", 
+    "create_memory_store",
+    "get_store_info",
+    "validate_store_config",
     "node_signature",
     "foreach_item_signature",
 ]

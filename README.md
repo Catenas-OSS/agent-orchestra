@@ -11,6 +11,7 @@ Agentic Orchestra has been battle-tested and includes all the polish improvement
 - **🔀 Multi-Server Routing** - Single MCP client with dynamic server-name routing per workflow node
 - **🛡️ Security & Safety** - Path validation, directory traversal prevention, and secure parameter handling
 - **🎯 Advanced Orchestration** - DAG workflows with concurrent `foreach`, intelligent `reduce`, and conditional `gate` nodes
+- **💾 SQLite Persistence** - Auto-created SQLite store with granular resume, analytics, and WAL mode for concurrent access
 - **📊 Comprehensive Telemetry** - Event-driven architecture with structured logging and performance metrics
 - **🧹 Clean Async Management** - Proper resource lifecycle with graceful startup/shutdown
 
@@ -45,9 +46,10 @@ Agentic Orchestra has been battle-tested and includes all the polish improvement
 ### **Orchestrator**
 The central workflow engine that executes DAG-based workflows with support for:
 - **Task Nodes** - Single agent operations
-- **Foreach Nodes** - Concurrent batch processing with configurable concurrency
+- **Foreach Nodes** - Concurrent batch processing with configurable concurrency and granular resume
 - **Reduce Nodes** - Intelligent aggregation of multiple results
 - **Gate Nodes** - Conditional workflow control
+- **SQLite Store** - Automatic persistence with resume functionality and analytics
 
 ### **AgentPool (Profile-Based)**
 Production-grade agent management with:
@@ -76,6 +78,15 @@ Drop-in replacement for `mcp-use` MCPAgent with:
 - **Parameter Safety** - Secure handling of server_name and other routing parameters
 - **Enhanced Error Handling** - Better error reporting and recovery
 - **Full API Compatibility** - 100% compatible with existing `mcp-use` code
+
+### **SQLite Store (Production-Ready)**
+Advanced persistence system with:
+- **Auto-Creation** - SQLite database automatically created at `.ao_runs/ao.sqlite3`
+- **Granular Resume** - Individual foreach items resume independently with sub_id support
+- **WAL Mode** - Concurrent access with Write-Ahead Logging for multiple orchestrators
+- **Analytics Ready** - Fast queries for run statistics, performance metrics, and UI integration
+- **Drop-in Replacement** - Perfect compatibility with existing JsonlRunStore workflows
+- **Migration Tools** - Built-in scripts to migrate existing JSONL runs to SQLite
 
 ## 📦 **Installation**
 
@@ -185,7 +196,8 @@ async def production_workflow():
         model_key="openai:gpt-4o-mini"
     )
     
-    orchestrator = Orchestrator(executor)
+    # SQLite store automatically created - no configuration needed!
+    orchestrator = Orchestrator(executor)  # Auto-creates .ao_runs/ao.sqlite3
     
     # Define multi-server workflow
     workflow = GraphSpec(
@@ -316,10 +328,12 @@ python -m pytest tests/ -v
 python -m pytest tests/test_polish_improvements.py -v  # Production features
 python -m pytest tests/test_orchestration.py -v       # Core orchestration
 python -m pytest tests/test_agent_pool.py -v          # Agent management
+python -m pytest tests/test_store_sqlite.py -v        # SQLite persistence
 ```
 
 **Test Coverage:**
 - **Polish Improvements** - All 10 production-ready improvements
+- **SQLite Persistence** - Auto store creation, granular resume, and analytics
 - **Race Conditions** - Concurrent agent creation safety
 - **Path Validation** - Security and directory traversal prevention
 - **Rate Limiting** - Global rate limiting across multiple agents
@@ -376,6 +390,42 @@ configs = {
 }
 
 mcp_config = create_multi_server_config(configs)
+```
+
+### **SQLite Store Configuration**
+```python
+from agent_orchestra.orchestrator import Orchestrator, create_store
+
+# Automatic (recommended) - SQLite store auto-created
+orchestrator = Orchestrator(executor)  # Uses .ao_runs/ao.sqlite3
+
+# Explicit SQLite configuration
+sqlite_store = create_store("sqlite", "./my_workflows.sqlite3")
+orchestrator = Orchestrator(executor, store=sqlite_store)
+
+# Environment-based store selection
+import os
+os.environ["AO_STORE"] = "sqlite"  # or "jsonl"
+auto_store = create_store("auto")  # Respects AO_STORE environment variable
+
+# In-memory SQLite for testing
+memory_store = create_store("sqlite", ":memory:")
+test_orchestrator = Orchestrator(executor, store=memory_store)
+
+# Resume workflows automatically
+async for event in orchestrator.run_streaming(workflow, run_spec, resume=True):
+    if event.type == "NODE_COMPLETE" and event.data.get('resumed'):
+        print(f"⚡ {event.node_id} resumed from SQLite cache")
+
+# Get run analytics
+sqlite_store = orchestrator._store
+stats = await sqlite_store.get_run_statistics("my_run_id")
+print(f"Completed nodes: {stats['completed_nodes']}")
+print(f"Event breakdown: {stats['event_counts']}")
+
+# Migration from JSONL to SQLite
+from agent_orchestra.orchestrator.store_sqlite import migrate_jsonl_to_sqlite
+await migrate_jsonl_to_sqlite(".ao_runs", "./workflows.sqlite3")
 ```
 
 ## 🛡️ **Security Features**
@@ -469,12 +519,13 @@ Agentic Orchestra has been thoroughly tested and includes all features needed fo
 - ✅ **Global rate limiting** with 429-aware retries
 - ✅ **Profile-based agent pooling** with automatic cleanup
 - ✅ **Multi-server routing** with parameter filtering
+- ✅ **SQLite persistence** with auto-creation and granular foreach resume
 - ✅ **Security validations** preventing directory traversal
 - ✅ **Comprehensive error handling** with graceful degradation
 - ✅ **Resource lifecycle management** with proper async cleanup
 - ✅ **Production monitoring** with structured events and metrics
 - ✅ **Backward compatibility** with existing mcp-use code
-- ✅ **Comprehensive test coverage** including race conditions
+- ✅ **Comprehensive test coverage** including race conditions and persistence
 
 ## 🛠️ **Development**
 
@@ -517,7 +568,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 **Upcoming Features:**
 - OpenTelemetry integration for distributed tracing
-- Human-in-the-loop (HITL) workflow nodes
+- Human-in-the-loop (HITL) workflow nodes (SQLite foundation ready)
+- Web UI for workflow monitoring and analytics (SQLite queries ready)
 - Advanced policy enforcement with RBAC
 - Workflow versioning and rollback
 - Distributed execution across multiple nodes

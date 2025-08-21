@@ -32,7 +32,9 @@ class TestAgentPool:
     @pytest.fixture
     def agent_pool(self):
         """Provide a fresh AgentPool instance."""
-        return AgentPool(max_agents_per_run=3)
+        async def mock_factory(agent_spec):
+            return MockSidecarMCPAgent()
+        return AgentPool(factory=mock_factory, max_agents_per_run=3)
     
     @pytest.fixture
     def template_agent(self):
@@ -43,11 +45,10 @@ class TestAgentPool:
     async def test_pool_initialization(self, agent_pool):
         """Test AgentPool initializes correctly."""
         assert agent_pool.max_agents_per_run == 3
-        assert len(agent_pool._run_pools) == 0
-        assert len(agent_pool._active_runs) == 0
+        assert len(agent_pool._agents) == 0
+        assert len(agent_pool._agent_usage) == 0
         
         stats = await agent_pool.get_pool_stats()
-        assert stats["active_runs"] == 0
         assert stats["total_agents"] == 0
     
     @pytest.mark.asyncio
