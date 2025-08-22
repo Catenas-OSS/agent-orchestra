@@ -2,7 +2,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-EventType = Literal["RUN_START", "NODE_START", "NODE_COMPLETE", "RUN_COMPLETE", "ERROR", "AGENT_CHUNK"]
+EventType = Literal[
+    "RUN_START", 
+    "NODE_START", 
+    "NODE_COMPLETE", 
+    "RUN_COMPLETE", 
+    "ERROR", 
+    "AGENT_CHUNK",
+    "AGENT_INSTRUCTIONS",  # NEW: Emitted once per attempt with task/system/tools/policy
+    "TOOL_START",          # NEW: Tool execution begins
+    "TOOL_END",            # NEW: Tool execution completes
+    "RETRY_ATTEMPT"        # NEW: Node retry attempt
+]
 
 @dataclass(frozen=True)
 class Event:

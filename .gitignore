@@ -163,3 +163,5 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+.ao_runs/ao.sqlite3
+/.ao_runs

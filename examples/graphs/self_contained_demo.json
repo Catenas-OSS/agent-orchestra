@@ -1,0 +1,71 @@
+{
+  "_meta": {
+    "description": "Self-contained workflow that sets up MCP servers and runs a complete task",
+    "mcp_config": {
+      "mcpServers": {
+        "filesystem": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+        }
+      },
+      "sidecar": {
+        "policy": {
+          "disallowed_tools": []
+        },
+        "run_context": {
+          "session_id": "self_contained_demo"
+        }
+      }
+    },
+    "agents": {
+      "file_analyst": {
+        "model": "gpt-4o-mini",
+        "server": "filesystem",
+        "role": "File analysis and code review specialist"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "setup_workspace",
+      "type": "task",
+      "name": "Setup Workspace",
+      "server_name": "filesystem",
+      "inputs": {
+        "task": "Create a workspace directory called 'demo_output' if it doesn't exist, and list the current project structure"
+      }
+    },
+    {
+      "id": "analyze_project",
+      "type": "task", 
+      "name": "Analyze Project Structure",
+      "server_name": "filesystem",
+      "inputs": {
+        "task": "Read the main source files and analyze the Agent Orchestra project structure. Focus on the CLI, orchestrator, and MCP integration components."
+      }
+    },
+    {
+      "id": "create_report", 
+      "type": "task",
+      "name": "Generate Analysis Report",
+      "server_name": "filesystem",
+      "inputs": {
+        "task": "Create a comprehensive markdown report about the Agent Orchestra project and save it to demo_output/project_analysis.md. Include architecture overview, key components, and usage examples."
+      }
+    },
+    {
+      "id": "verify_output",
+      "type": "task",
+      "name": "Verify Report Created",
+      "server_name": "filesystem", 
+      "inputs": {
+        "task": "Check that the report was created successfully and display a summary of what was generated"
+      }
+    }
+  ],
+  "edges": [
+    ["setup_workspace", "analyze_project"],
+    ["analyze_project", "create_report"],
+    ["create_report", "verify_output"]
+  ]
+}

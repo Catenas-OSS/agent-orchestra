@@ -75,11 +75,42 @@ class Orchestrator:
                        stream: bool = False) -> AsyncGenerator[Event, None]:
         """Execute a single node with retry logic, timeout, and streaming support."""
         
-        # Emit NODE_START event
-        yield self._emit_event_sync("NODE_START", run.run_id, node.id, {
+        # Emit enhanced NODE_START event with attempt tracking
+        node_start_data = {
             "type": node.type, 
-            "phase": f"{node.type}:start"
-        })
+            "phase": f"{node.type}:start",
+            "attempt": 1,
+            "max_attempts": node.retries + 1,
+            "started_at": asyncio.get_event_loop().time(),
+            "server_name": getattr(node, 'server_name', None)
+        }
+        
+        # Try to get model info from executor
+        if hasattr(self._executor, '_model_name'):
+            node_start_data["model"] = self._executor._model_name
+        elif hasattr(self._executor, '_model_key'):
+            node_start_data["model"] = self._executor._model_key
+        
+        yield self._emit_event_sync("NODE_START", run.run_id, node.id, node_start_data)
+        
+        # Emit AGENT_INSTRUCTIONS event with task details
+        if node.type == "task":
+            # Extract task information
+            task_info = {
+                "task": {
+                    "title": node.name,
+                    "body": self._build_task_prompt(node, ctx)
+                },
+                "system": "You are a helpful AI assistant executing a workflow task.",
+                "tools": self._get_available_tools(node),
+                "policy": {"allow": True, "redact": False},
+                "context": {
+                    "run_id": run.run_id,
+                    "node_id": node.id,
+                    "server_name": getattr(node, 'server_name', None)
+                }
+            }
+            yield self._emit_event_sync("AGENT_INSTRUCTIONS", run.run_id, node.id, task_info)
         
         # Handle different node types
         if node.type == "task":
@@ -158,10 +189,38 @@ class Orchestrator:
                     async for chunk in stream_generator:
                         yield self._emit_event_sync("AGENT_CHUNK", run.run_id, node.id, chunk)
                 
-                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
-                    "output_meta": list(ctx["blackboard"].get(node.id, {}).keys()),
-                    "phase": "task:complete"
-                })
+                # Enhanced NODE_COMPLETE event
+                node_result = ctx["blackboard"].get(node.id, {})
+                result_data = node_result.get("result", {})
+                
+                complete_data = {
+                    "output_meta": list(node_result.keys()),
+                    "phase": "task:complete",
+                    "ended_at": asyncio.get_event_loop().time(),
+                    "resumed": False  # TODO: Track actual resume state
+                }
+                
+                # Extract output summary (normalize result|output|text)
+                output_summary = self._extract_output_summary(result_data)
+                if output_summary:
+                    complete_data["output_summary"] = output_summary
+                
+                # Add token/cost info if available
+                if isinstance(result_data, dict):
+                    if "usage" in result_data:
+                        usage = result_data["usage"]
+                        complete_data["tokens"] = {
+                            "prompt": usage.get("prompt_tokens", 0),
+                            "completion": usage.get("completion_tokens", 0),
+                            "total": usage.get("total_tokens", 0)
+                        }
+                    if "cost" in result_data:
+                        complete_data["cost"] = result_data["cost"]
+                
+                # TODO: Add artifacts detection
+                complete_data["artifacts"] = []
+                
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, complete_data)
             else:
                 if node.timeout_s:
                     result = await asyncio.wait_for(execute_with_retry_regular(), timeout=node.timeout_s)
@@ -169,10 +228,35 @@ class Orchestrator:
                     result = await execute_with_retry_regular()
                 
                 ctx["blackboard"][node.id] = {"result": result, "source": node.id}
-                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
+                
+                # Enhanced NODE_COMPLETE event (non-streaming)
+                complete_data = {
                     "output_meta": list(ctx["blackboard"][node.id].keys()),
-                    "phase": "task:complete"
-                })
+                    "phase": "task:complete",
+                    "ended_at": asyncio.get_event_loop().time(),
+                    "resumed": False
+                }
+                
+                # Extract output summary
+                output_summary = self._extract_output_summary(result)
+                if output_summary:
+                    complete_data["output_summary"] = output_summary
+                
+                # Add token/cost info if available
+                if isinstance(result, dict):
+                    if "usage" in result:
+                        usage = result["usage"]
+                        complete_data["tokens"] = {
+                            "prompt": usage.get("prompt_tokens", 0),
+                            "completion": usage.get("completion_tokens", 0),
+                            "total": usage.get("total_tokens", 0)
+                        }
+                    if "cost" in result:
+                        complete_data["cost"] = result["cost"]
+                
+                complete_data["artifacts"] = []
+                
+                yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, complete_data)
 
         except Exception as e:
             yield self._emit_event_sync("ERROR", run.run_id, node.id, {
@@ -592,3 +676,93 @@ class Orchestrator:
                     queue.append(edge[1])
         
         return successors
+    
+    def _extract_output_summary(self, result: Any) -> Optional[str]:
+        """
+        Extract normalized output summary from result data.
+        Handles result|output|text normalization and provides fallback text.
+        """
+        if result is None:
+            return None
+        
+        # Handle dict results - look for common output keys
+        if isinstance(result, dict):
+            for key in ["result", "output", "text", "content", "message"]:
+                if key in result:
+                    value = result[key]
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()[:200]  # Limit to 200 chars
+                    elif value is not None:
+                        return str(value)[:200]
+            
+            # Fallback to first non-empty string value
+            for value in result.values():
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:200]
+        
+        # Handle direct string results
+        elif isinstance(result, str) and result.strip():
+            return result.strip()[:200]
+        
+        # Fallback to string representation
+        elif result is not None:
+            return str(result)[:200]
+        
+        return None
+    
+    def _build_task_prompt(self, node: NodeSpec, ctx: Dict[str, Any]) -> str:
+        """Build the task prompt for AGENT_INSTRUCTIONS event."""
+        prompt_parts = []
+        
+        if node.name:
+            prompt_parts.append(f"Task: {node.name}")
+        
+        # Add inputs to prompt  
+        if node.inputs:
+            prompt_parts.append("Inputs:")
+            for key, value in node.inputs.items():
+                # Handle references to other nodes
+                if isinstance(value, str) and value in ctx["blackboard"]:
+                    blackboard_entry = ctx["blackboard"][value]
+                    # Extract actual result from blackboard entry structure
+                    if isinstance(blackboard_entry, dict) and "result" in blackboard_entry:
+                        actual_value = blackboard_entry["result"]
+                        # Further extract if nested
+                        if isinstance(actual_value, dict) and "output" in actual_value:
+                            actual_value = actual_value["output"]
+                    else:
+                        actual_value = blackboard_entry
+                    prompt_parts.append(f"- {key}: {actual_value}")
+                else:
+                    prompt_parts.append(f"- {key}: {value}")
+        
+        return "\n".join(prompt_parts)
+    
+    def _get_available_tools(self, node: NodeSpec) -> list:
+        """Get list of available tools for the agent."""
+        # This is a simplified version - in reality we'd query the MCP server
+        tools = [
+            {
+                "name": "analyze_data",
+                "purpose": "Analyze and process data inputs",
+                "schema_summary": "Takes data input and returns analysis",
+                "safety": "safe"
+            },
+            {
+                "name": "generate_content", 
+                "purpose": "Generate text content based on inputs",
+                "schema_summary": "Takes prompt and returns generated text",
+                "safety": "safe"
+            }
+        ]
+        
+        # Add server-specific tools if available
+        if hasattr(node, 'server_name') and node.server_name:
+            tools.append({
+                "name": f"{node.server_name}_tools",
+                "purpose": f"Server-specific tools for {node.server_name}",
+                "schema_summary": "Various server tools",
+                "safety": "safe"
+            })
+        
+        return tools

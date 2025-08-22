@@ -1,0 +1,35 @@
+{
+  "nodes": [
+    {
+      "id": "load_data",
+      "type": "task",
+      "name": "Load Data",
+      "inputs": {
+        "source": "database",
+        "format": "json"
+      }
+    },
+    {
+      "id": "process_data",
+      "type": "task", 
+      "name": "Process Data",
+      "inputs": {
+        "algorithm": "transform",
+        "batch_size": 1000
+      }
+    },
+    {
+      "id": "save_results",
+      "type": "task",
+      "name": "Save Results", 
+      "inputs": {
+        "destination": "output.json",
+        "format": "json"
+      }
+    }
+  ],
+  "edges": [
+    ["load_data", "process_data"],
+    ["process_data", "save_results"]
+  ]
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, Optional, Any, Set, Tuple, Callable, Awaitable
 from dataclasses import dataclass
-from ..sidecar.sidecar_agent import SidecarMCPAgent
+from ..sidecar import sidecar_agent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class AgentSpec:
 
 class AgentPool:
     """
-    Manages a pool of SidecarMCPAgent instances for reuse across operations.
+    Manages a pool of sidecar_agent.SidecarMCPAgent instances for reuse across operations.
     
     Features:
     - Profile-based agent creation (server_name, model_key, policy_id)
@@ -40,12 +40,12 @@ class AgentPool:
     - Automatic cleanup
     """
     
-    def __init__(self, factory: Callable[[AgentSpec], Awaitable[SidecarMCPAgent]], max_agents_per_run: int = 10):
+    def __init__(self, factory: Callable[[AgentSpec], Awaitable[sidecar_agent.SidecarMCPAgent]], max_agents_per_run: int = 10):
         self._factory = factory
         self.max_agents_per_run = max_agents_per_run
         
         # Profile-based agent pools
-        self._agents: Dict[ProfileKey, SidecarMCPAgent] = {}  # profile_key -> agent
+        self._agents: Dict[ProfileKey, sidecar_agent.SidecarMCPAgent] = {}  # profile_key -> agent
         self._agent_usage: Dict[ProfileKey, int] = {}  # profile_key -> usage_count
         
         # Per-profile locks for race-safe creation
@@ -62,7 +62,7 @@ class AgentPool:
         """Generate a profile key from an agent specification."""
         return (spec.server_name, spec.model_key, spec.policy_id)
     
-    async def get(self, spec: AgentSpec, run_id: Optional[str] = None) -> SidecarMCPAgent:
+    async def get(self, spec: AgentSpec, run_id: Optional[str] = None) -> sidecar_agent.SidecarMCPAgent:
         """
         Get an agent for the specified profile.
         
@@ -75,7 +75,7 @@ class AgentPool:
             run_id: Optional run ID for tracking purposes
             
         Returns:
-            SidecarMCPAgent instance for the profile
+            sidecar_agent.SidecarMCPAgent instance for the profile
         """
         key = self._profile_key(spec)
         
@@ -127,7 +127,7 @@ class AgentPool:
             self._run_profiles[run_id] = set()
         self._run_profiles[run_id].add(profile_key)
     
-    async def get_agent_for_run(self, run_id: str, template_agent: SidecarMCPAgent) -> SidecarMCPAgent:
+    async def get_agent_for_run(self, run_id: str, template_agent: sidecar_agent.SidecarMCPAgent) -> sidecar_agent.SidecarMCPAgent:
         """
         Get or create an agent for a specific run (legacy method).
         
@@ -144,7 +144,7 @@ class AgentPool:
         
         return await self.get(spec, run_id)
     
-    async def get_agent_for_foreach_item(self, run_id: str, item_index: int, template_agent: SidecarMCPAgent) -> SidecarMCPAgent:
+    async def get_agent_for_foreach_item(self, run_id: str, item_index: int, template_agent: sidecar_agent.SidecarMCPAgent) -> sidecar_agent.SidecarMCPAgent:
         """
         Get an agent for a specific foreach item (legacy method).
         
@@ -236,7 +236,7 @@ class AgentPool:
 
 
 # Factory function type
-AgentFactory = Callable[[AgentSpec], Awaitable[SidecarMCPAgent]]
+AgentFactory = Callable[[AgentSpec], Awaitable[sidecar_agent.SidecarMCPAgent]]
 
 
 def create_default_agent_factory(client: Any, llm: Optional[Any] = None) -> AgentFactory:
@@ -274,12 +274,12 @@ def create_default_agent_factory(client: Any, llm: Optional[Any] = None) -> Agen
     Returns:
         Factory function for creating agents
     """
-    async def factory(spec: AgentSpec) -> SidecarMCPAgent:
+    async def factory(spec: AgentSpec) -> sidecar_agent.SidecarMCPAgent:
         """Create an agent for the given specification."""
-        from ..sidecar.sidecar_agent import SidecarMCPAgent
+        from ..sidecar import sidecar_agent
         
         # Create agent with the shared client
-        agent = SidecarMCPAgent(
+        agent = sidecar_agent.SidecarMCPAgent(
             llm=llm,
             client=client,
             use_server_manager=spec.use_server_manager

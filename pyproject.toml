@@ -32,7 +32,19 @@ dependencies = [
 ]
 requires-python = ">=3.11"
 
+[project.scripts]
+catenas = "agent_orchestra.cli_py:app"
+
 [project.optional-dependencies]
+cli = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "langchain-openai>=0.1.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "websockets>=11.0.0",
+    "urwid>=2.1.0",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
@@ -50,9 +62,6 @@ Documentation = "https://github.com/Catenas-OSS/agent-orchestra/blob/main/README
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-agent_orchestra = ["py.typed"]
-
 [tool.setuptools.package-dir]
 "" = "src"
 
@@ -67,7 +76,7 @@ line_length = 88
 [tool.pytest.ini_options]
 addopts = "-q"
 markers = [
-    "e2e: marks tests as end-to-end integration tests (deselect with '-m \"not e2e\"')"
+    "e2e: marks tests as end-to-end integration tests (deselect with '-m \"not e2e\")"
 ]
 
 [tool.mypy]

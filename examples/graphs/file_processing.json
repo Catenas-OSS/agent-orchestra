@@ -1,0 +1,56 @@
+{
+  "nodes": [
+    {
+      "id": "create_temp_data",
+      "type": "task",
+      "name": "Create Temporary Data File",
+      "inputs": {
+        "filename": "temp_data.txt",
+        "content": "apple,banana,cherry\norange,grape,kiwi\nstrawberry,blueberry,mango"
+      }
+    },
+    {
+      "id": "count_lines",
+      "type": "task", 
+      "name": "Count Lines in File",
+      "inputs": {
+        "input_file": "temp_data.txt"
+      }
+    },
+    {
+      "id": "process_fruits",
+      "type": "foreach",
+      "name": "Process Each Fruit Line",
+      "inputs": {
+        "items": [
+          {"line_num": 1, "description": "tropical fruits"},
+          {"line_num": 2, "description": "citrus fruits"},
+          {"line_num": 3, "description": "berry fruits"}
+        ]
+      },
+      "concurrency": 2
+    },
+    {
+      "id": "create_summary",
+      "type": "task",
+      "name": "Create Processing Summary",
+      "inputs": {
+        "output_file": "processing_summary.json"
+      }
+    },
+    {
+      "id": "cleanup",
+      "type": "task",
+      "name": "Cleanup Temporary Files", 
+      "inputs": {
+        "files_to_remove": ["temp_data.txt"]
+      }
+    }
+  ],
+  "edges": [
+    ["create_temp_data", "count_lines"],
+    ["count_lines", "process_fruits"],
+    ["process_fruits", "create_summary"],
+    ["create_summary", "cleanup"]
+  ]
+}

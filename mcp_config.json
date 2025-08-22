@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/lakshaymahajan/Documents/GitHub/agent-orchestra"]
+    },
+    "brave-search": {
+      "command": "npx", 
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-api-key-here"
+      }
+    }
+  },
+  "sidecar": {
+    "policy": {
+      "disallowed_tools": ["file_delete"]
+    },
+    "run_context": {
+      "session_id": "cli_demo_session"
+    }
+  }
+}
