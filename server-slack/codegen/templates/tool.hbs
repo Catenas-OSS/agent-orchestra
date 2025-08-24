@@ -1,0 +1,43 @@
+import { z } from "zod";
+import { resolveSlackToken } from "../../auth/token.js";
+import { callSlack } from "../../slack/client.js";
+{{#if pagination}}
+import { paginateCursor } from "../../slack/pagination.js";
+{{/if}}
+
+export const name = "slack.{{methodName}}";
+export const description = "{{description}}";
+
+export const inputSchema = z.object({
+{{#each params}}
+  {{name}}: {{#if required}}z.{{tsType}}(),{{else}}z.{{tsType}}().optional(),{{/if}}
+{{/each}}
+{{#if pagination}}
+  all: z.boolean().optional(),
+{{/if}}
+});
+
+export type Input = z.infer<typeof inputSchema>;
+
+export async function handler(ctx: any, input: Input) {
+  const token = resolveSlackToken(ctx);
+  const params: any = {};
+{{#each params}}
+  if (input.{{name}} !== undefined) params.{{name}} = input.{{name}};
+{{/each}}
+{{#if pagination}}
+  const callPage = async (cursor?: string) => {
+    const p = { ...params };
+    if (cursor) p.cursor = cursor;
+    const resp: any = await callSlack(token, "{{methodName}}", p);
+    return { items: resp.{{pagination.items}} || [], next_cursor: resp.{{pagination.cursorPath}} };
+  };
+  if (input.all) {
+    const items = await paginateCursor(callPage, true, input.limit);
+    return { {{pagination.items}}: items };
+  }
+  return callPage(input.cursor);
+{{else}}
+  return callSlack(token, "{{methodName}}", params);
+{{/if}}
+}

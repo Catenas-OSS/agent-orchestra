@@ -1,0 +1,24 @@
+[
+  {
+    "name": "chat.postMessage",
+    "description": "Post a message to a channel",
+    "params": [
+      { "name": "channel", "type": "string", "required": true },
+      { "name": "text", "type": "string", "required": true },
+      { "name": "thread_ts", "type": "string", "required": false },
+      { "name": "blocks", "type": "object", "required": false },
+      { "name": "mrkdwn", "type": "boolean", "required": false },
+      { "name": "unfurl_links", "type": "boolean", "required": false },
+      { "name": "unfurl_media", "type": "boolean", "required": false }
+    ]
+  },
+  {
+    "name": "users.list",
+    "description": "List users in a workspace",
+    "params": [
+      { "name": "limit", "type": "number", "required": false },
+      { "name": "cursor", "type": "string", "required": false }
+    ],
+    "cursorPagination": true
+  }
+]
