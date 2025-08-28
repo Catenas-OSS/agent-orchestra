@@ -9,10 +9,10 @@ EventType = Literal[
     "RUN_COMPLETE", 
     "ERROR", 
     "AGENT_CHUNK",
-    "AGENT_INSTRUCTIONS",  # NEW: Emitted once per attempt with task/system/tools/policy
-    "TOOL_START",          # NEW: Tool execution begins
-    "TOOL_END",            # NEW: Tool execution completes
-    "RETRY_ATTEMPT"        # NEW: Node retry attempt
+    "AGENT_INSTRUCTIONS",  # Emitted once per attempt with task/system/tools/policy
+    "TOOL_START",          # Tool execution begins
+    "TOOL_END",            # Tool execution completes  
+    "RETRY_ATTEMPT"        # Node retry attempt
 ]
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Event:
 @dataclass(frozen=True)
 class NodeSpec:
     id: str
-    type: Literal["task", "foreach", "reduce", "gate"]
+    type: Literal["task", "foreach", "reduce", "gate", "supervisor"]
     name: Optional[str] = None
     inputs: Dict[str, Any] = field(default_factory=dict) # type: ignore
     timeout_s: Optional[float] = None
@@ -36,6 +36,9 @@ class NodeSpec:
     concurrency: Optional[int] = None  # For foreach: max concurrent items
     foreach_fail_policy: Literal["fail_fast", "skip"] = "fail_fast"  # How to handle failed foreach items
     server_name: Optional[str] = None  # reserved for later
+    # Supervisor-specific fields
+    available_agents: Optional[Dict[str, Dict[str, Any]]] = field(default_factory=dict)  # {agent_id: {server, description, capabilities}}
+    max_agent_calls: int = 5  # Maximum number of agents supervisor can call
 
 @dataclass(frozen=True)
 class GraphSpec:

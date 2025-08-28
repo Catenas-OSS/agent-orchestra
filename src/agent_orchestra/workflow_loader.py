@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 from agent_orchestra.orchestrator.types import GraphSpec, RunSpec
 from agent_orchestra.orchestrator.store_factory import create_store
+from .logging import get_system_logger
 
 
 @dataclass
@@ -38,19 +39,26 @@ def load_workflow(workflow_path: Path) -> WorkflowResult:
     Raises:
         Exception: If the workflow file is invalid or missing required components
     """
+    system_logger = get_system_logger()
+    system_logger.info("workflow_loader", f"Loading workflow: {workflow_path.name}")
+    
     if not workflow_path.exists():
+        system_logger.error("workflow_loader", f"File not found: {workflow_path}")
         raise FileNotFoundError(f"Workflow file not found: {workflow_path}")
     
     if not workflow_path.suffix == '.py':
+        system_logger.error("workflow_loader", f"Invalid file type: {workflow_path.suffix}")
         raise ValueError(f"Workflow file must be a Python file (.py), got: {workflow_path.suffix}")
     
     # Add the workflow directory to sys.path so imports work
     workflow_dir = workflow_path.parent
     if str(workflow_dir) not in sys.path:
         sys.path.insert(0, str(workflow_dir))
+        system_logger.debug("workflow_loader", f"Added to sys.path: {workflow_dir}")
     
     try:
         # Execute the Python file to get its namespace
+        system_logger.info("workflow_loader", "Executing workflow file")
         # Set up a proper namespace with __file__ and other builtins
         # Use a special __name__ to prevent if __name__ == "__main__" blocks from running
         namespace = {
@@ -64,16 +72,20 @@ def load_workflow(workflow_path: Path) -> WorkflowResult:
             exec(code, namespace)
         
         # Extract components from the namespace
+        system_logger.info("workflow_loader", "Extracting workflow components")
         # First try to extract from global scope
         try:
             graph_spec = _extract_graph_spec(namespace, workflow_path)
             run_spec = _extract_run_spec(namespace, workflow_path)
             executor = _extract_executor(namespace, workflow_path)
             store = _extract_store(namespace, workflow_path)
+            
+            system_logger.info("workflow_loader", f"Successfully extracted: graph({len(graph_spec.nodes)} nodes), executor({type(executor).__name__})")
         except ValueError as e:
             # If not found in global scope, this might be a demo script
             # Try to run it and see if it creates a workflow 
             if 'main' in namespace and callable(namespace['main']):
+                system_logger.error("workflow_loader", "Detected demo script with main() function")
                 raise ValueError(f"This appears to be a demo script with a main() function. "
                                 f"The CLI expects workflow definition files with GraphSpec, RunSpec, and executor at module level. "
                                 f"Original error: {e}")
@@ -89,6 +101,7 @@ def load_workflow(workflow_path: Path) -> WorkflowResult:
         )
         
     except Exception as e:
+        system_logger.error("workflow_loader", f"Error loading workflow: {str(e)}")
         raise Exception(f"Error loading workflow from {workflow_path}: {e}") from e
     
     finally:
@@ -158,7 +171,7 @@ def _extract_executor(namespace: Dict[str, Any], workflow_path: Path) -> Any:
             return obj
     
     # If no executor found, create a default MCPExecutor
-    print(f"⚠️  No executor found in {workflow_path.name}, creating default MCPExecutor")
+    system_logger.warning("workflow_loader", f"No executor found in {workflow_path.name}, creating default MCPExecutor")
     
     try:
         from .orchestrator.executors_mcp import MCPExecutor

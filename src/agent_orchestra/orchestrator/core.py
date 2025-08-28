@@ -1,3 +1,9 @@
+"""
+Core orchestration engine for Agent Orchestra.
+
+This module contains the main Orchestrator class that executes workflow graphs
+with support for conditional flows, parallel processing, and error handling.
+"""
 from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator, Dict, Optional, Set
@@ -10,6 +16,7 @@ from .utils import topo_sort
 from .signature import node_signature, foreach_item_signature
 from .store import RunStore, SavedNode, SavedForeachItem
 from .store_factory import create_store
+from ..logging import get_system_logger
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,8 @@ class Orchestrator:
         self._event_seq = 0
         self._gate_pruned_nodes: Set[str] = set()
         self._server_configs: Optional[Dict[str, Any]] = None
+        self._system_logger = get_system_logger()
+        self._system_logger.info("orchestrator", "Orchestrator initialized")
 
     def _next_event_seq(self) -> int:
         """Generate monotonic event sequence for deterministic logging."""
@@ -77,6 +86,7 @@ class Orchestrator:
         
         # Emit enhanced NODE_START event with attempt tracking
         node_start_data = {
+            "node_type": node.type,
             "type": node.type, 
             "phase": f"{node.type}:start",
             "attempt": 1,
@@ -84,6 +94,13 @@ class Orchestrator:
             "started_at": asyncio.get_event_loop().time(),
             "server_name": getattr(node, 'server_name', None)
         }
+        
+        # Add supervisor-specific fields
+        if node.type == "supervisor":
+            node_start_data.update({
+                "available_agents": node.available_agents or {},
+                "max_agent_calls": node.max_agent_calls
+            })
         
         # Try to get model info from executor
         if hasattr(self._executor, '_model_name'):
@@ -124,6 +141,9 @@ class Orchestrator:
                 yield event
         elif node.type == "gate":
             async for event in self._run_gate_node(node, ctx, run, stream):
+                yield event
+        elif node.type == "supervisor":
+            async for event in self._run_supervisor_node(node, ctx, run, stream):
                 yield event
         else:
             yield self._emit_event_sync("ERROR", run.run_id, node.id, {
@@ -229,6 +249,14 @@ class Orchestrator:
                 
                 ctx["blackboard"][node.id] = {"result": result, "source": node.id}
                 
+                # Debug logging for blackboard storage
+                logger.info(f"BLACKBOARD STORE: Node {node.id} storing result type: {type(result)}")
+                logger.info(f"BLACKBOARD STORE: Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not dict'}")
+                if isinstance(result, dict) and "output" in result:
+                    logger.info(f"BLACKBOARD STORE: Output preview: {str(result['output'])[:200]}...")
+                else:
+                    logger.info(f"BLACKBOARD STORE: Raw result preview: {str(result)[:200]}...")
+                
                 # Enhanced NODE_COMPLETE event (non-streaming)
                 complete_data = {
                     "output_meta": list(ctx["blackboard"][node.id].keys()),
@@ -295,6 +323,14 @@ class Orchestrator:
                 
                 # Store result in blackboard
                 ctx["blackboard"][node.id] = {"result": final_result, "source": node.id}
+                
+                # Debug logging for streaming blackboard storage
+                logger.info(f"BLACKBOARD STORE (STREAM): Node {node.id} storing result type: {type(final_result)}")
+                logger.info(f"BLACKBOARD STORE (STREAM): Result keys: {list(final_result.keys()) if isinstance(final_result, dict) else 'Not dict'}")
+                if isinstance(final_result, dict) and "output" in final_result:
+                    logger.info(f"BLACKBOARD STORE (STREAM): Output preview: {str(final_result['output'])[:200]}...")
+                else:
+                    logger.info(f"BLACKBOARD STORE (STREAM): Raw result preview: {str(final_result)[:200]}...")
                 
             except Exception:
                 execute_task.cancel()
@@ -540,6 +576,201 @@ class Orchestrator:
                 "phase": "gate:error"
             })
 
+    async def _run_supervisor_node(self, node: NodeSpec, ctx: Dict[str, Any], run: RunSpec, 
+                                 stream: bool = False) -> AsyncGenerator[Event, None]:
+        """Execute a supervisor node that dynamically chooses and calls other agents."""
+        logger.info(f"SUPERVISOR: Starting node {node.id} with {len(node.available_agents or {})} available agents")
+        
+        # Build supervisor context with available agents and current task
+        supervisor_prompt = self._build_supervisor_prompt(node, ctx)
+        
+        # Create a dynamic task spec for supervisor reasoning
+        supervisor_task = NodeSpec(
+            id=f"{node.id}_supervisor_decision",
+            type="task",
+            name="Agent Selection and Orchestration",
+            inputs={"task_prompt": supervisor_prompt},
+            server_name=node.server_name
+        )
+        
+        # Execute supervisor decision-making
+        supervisor_decision_completed = False
+        supervisor_output = ""
+        
+        async for event in self._run_task_node(supervisor_task, ctx, run, stream=stream):
+            # Pass through supervisor decision events
+            if event.type == "AGENT_CHUNK" and stream:
+                yield event
+            elif event.type == "NODE_COMPLETE":
+                supervisor_decision_completed = True
+                # Extract supervisor decision and execute chosen agents
+                decision_result = ctx["blackboard"].get(supervisor_task.id, {}).get("result", {})
+                if isinstance(decision_result, dict) and "output" in decision_result:
+                    supervisor_output = decision_result["output"]
+        
+        # After supervisor decision is complete, execute chosen agents
+        if supervisor_decision_completed and supervisor_output:
+            final_result = await self._execute_supervisor_decisions(
+                node, supervisor_output, ctx, run, stream=stream
+            )
+            
+            # Store final result in blackboard
+            ctx["blackboard"][node.id] = {"result": final_result, "source": node.id}
+            
+            # Emit final supervisor completion
+            yield self._emit_event_sync("NODE_COMPLETE", run.run_id, node.id, {
+                "output_meta": ["result", "source"],
+                "phase": "supervisor:complete",
+                "agents_called": len(self._parse_agent_calls(supervisor_output))
+            })
+
+    def _build_supervisor_prompt(self, node: NodeSpec, ctx: Dict[str, Any]) -> str:
+        """Build prompt for supervisor agent to choose and orchestrate other agents."""
+        prompt_parts = []
+        
+        prompt_parts.append("You are a supervisor agent responsible for choosing and orchestrating other specialized agents to complete a task.")
+        prompt_parts.append(f"Task: {node.name or 'Complete the assigned task'}")
+        
+        # Add context from inputs
+        if node.inputs:
+            prompt_parts.append("\\nContext and Inputs:")
+            for key, value in node.inputs.items():
+                # Resolve references to other nodes
+                if isinstance(value, str) and value in ctx["blackboard"]:
+                    blackboard_entry = ctx["blackboard"][value]
+                    if isinstance(blackboard_entry, dict) and "result" in blackboard_entry:
+                        actual_value = blackboard_entry["result"]
+                        if isinstance(actual_value, dict) and "output" in actual_value:
+                            actual_value = actual_value["output"]
+                    else:
+                        actual_value = blackboard_entry
+                    prompt_parts.append(f"- {key}: {actual_value}")
+                else:
+                    prompt_parts.append(f"- {key}: {value}")
+        
+        # Add available agents
+        if node.available_agents:
+            prompt_parts.append("\\nAvailable Specialized Agents:")
+            for agent_id, agent_info in node.available_agents.items():
+                description = agent_info.get("description", "No description")
+                capabilities = agent_info.get("capabilities", [])
+                server = agent_info.get("server", "default")
+                prompt_parts.append(f"- {agent_id}: {description}")
+                if capabilities:
+                    prompt_parts.append(f"  Capabilities: {', '.join(capabilities)}")
+                prompt_parts.append(f"  Server: {server}")
+        
+        prompt_parts.append(f"\\nYou can call up to {node.max_agent_calls} agents. For each agent you want to call, respond with:")
+        prompt_parts.append("CALL_AGENT: <agent_id>")
+        prompt_parts.append("TASK: <specific task for this agent>")
+        prompt_parts.append("INPUT: <input data for this agent>")
+        prompt_parts.append("---")
+        prompt_parts.append("\\nEnd your response with:")
+        prompt_parts.append("FINAL_RESULT: <your final combined result>")
+        
+        return "\n".join(prompt_parts)
+
+    def _parse_agent_calls(self, supervisor_output: str) -> list:
+        """Parse agent calls from supervisor output."""
+        calls = []
+        lines = supervisor_output.split("\n")  # Fixed: was using \\n instead of \n
+        current_call = {}
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith("CALL_AGENT:"):
+                if current_call:  # Save previous call
+                    calls.append(current_call)
+                current_call = {"agent_id": line.replace("CALL_AGENT:", "").strip()}
+            elif line.startswith("TASK:") and current_call:
+                current_call["task"] = line.replace("TASK:", "").strip()
+            elif line.startswith("INPUT:") and current_call:
+                current_call["input"] = line.replace("INPUT:", "").strip()
+            elif line == "---" and current_call:
+                calls.append(current_call)
+                current_call = {}
+        
+        if current_call:  # Don't forget the last call
+            calls.append(current_call)
+            
+        return calls
+
+    async def _execute_supervisor_decisions(self, node: NodeSpec, supervisor_output: str, 
+                                          ctx: Dict[str, Any], run: RunSpec, stream: bool = False) -> Dict[str, Any]:
+        """Execute the agents chosen by the supervisor."""
+        agent_calls = self._parse_agent_calls(supervisor_output)
+        results = {}
+        
+        logger.info(f"SUPERVISOR: Executing {len(agent_calls)} agent calls")
+        
+        for i, call in enumerate(agent_calls[:node.max_agent_calls]):
+            agent_id = call.get("agent_id")
+            task = call.get("task", "Complete the assigned task")
+            agent_input = call.get("input", "")
+            
+            if not agent_id or agent_id not in (node.available_agents or {}):
+                logger.warning(f"SUPERVISOR: Unknown agent {agent_id}, skipping")
+                continue
+                
+            agent_info = node.available_agents[agent_id]  # type: ignore
+            server_name = agent_info.get("server")
+            
+            # Create dynamic task node for this agent call with enhanced prompting for file creation
+            enhanced_task = f"""
+{task}
+
+You are a {agent_id} specialist. Use MCP tools to create actual files:
+
+For ui_designer: Create wireframes, design specifications, and asset lists
+For frontend_developer: Create HTML, CSS, and JavaScript files using filesystem tools
+For content_writer: Create content files, copy, and text assets  
+For backend_developer: Create server code, API files, and configuration
+For quality_assurance: Create test files and validation reports
+
+Input: {agent_input}
+
+IMPORTANT: Use filesystem and file creation MCP tools to generate real files, not just descriptions.
+"""
+
+            agent_task = NodeSpec(
+                id=f"{node.id}_agent_{i}_{agent_id}",
+                type="task", 
+                name=enhanced_task,
+                inputs={"task_description": enhanced_task, "input_data": agent_input},
+                server_name=server_name
+            )
+            
+            logger.info(f"SUPERVISOR: Calling agent {agent_id} with task: {task[:100]}...")
+            
+            # Execute the agent task
+            async for event in self._run_task_node(agent_task, ctx, run, stream=stream):
+                # Let agent chunks pass through if needed
+                pass
+            
+            # Extract result
+            agent_result = ctx["blackboard"].get(agent_task.id, {}).get("result", {})
+            if isinstance(agent_result, dict) and "output" in agent_result:
+                results[agent_id] = agent_result["output"]
+            else:
+                results[agent_id] = agent_result
+        
+        # Extract final result from supervisor output
+        final_result_text = ""
+        lines = supervisor_output.split("\\n")
+        capture = False
+        for line in lines:
+            if line.strip().startswith("FINAL_RESULT:"):
+                final_result_text = line.replace("FINAL_RESULT:", "").strip()
+                capture = True
+            elif capture and line.strip():
+                final_result_text += "\\n" + line.strip()
+        
+        return {
+            "output": final_result_text or "Task completed by supervisor",
+            "agent_results": results,
+            "agents_called": list(results.keys())
+        }
+
     async def run(self, graph: GraphSpec, run: RunSpec, *, resume: bool = False) -> AsyncGenerator[Event, None]:
         """Run orchestration with sequential execution (backward compatible)."""
         async for event in self._run_orchestration(graph, run, stream=False, resume=resume):
@@ -547,19 +778,24 @@ class Orchestrator:
 
     async def run_streaming(self, graph: GraphSpec, run: RunSpec, *, resume: bool = False) -> AsyncGenerator[Event, None]:
         """Run orchestration with streaming support."""
+        self._system_logger.info("orchestrator", f"Starting streaming run: {run.run_id}")
+        self._system_logger.info("orchestrator", f"Graph: {len(graph.nodes)} nodes, Resume: {resume}")
         async for event in self._run_orchestration(graph, run, stream=True, resume=resume):
             yield event
 
     async def _run_orchestration(self, graph: GraphSpec, run: RunSpec, stream: bool = False, resume: bool = False) -> AsyncGenerator[Event, None]:
         """Enhanced orchestration with checkpoint persistence and resume support."""
+        self._system_logger.info("orchestrator", f"Starting orchestration: {run.run_id}")
         ctx: Dict[str, Any] = {"blackboard": {}, "_graph_edges": graph.edges}
         
         # Initialize persistence and load checkpoints
         checkpoint = {}
         try:
             if self._store:
+                self._system_logger.info("orchestrator", "Initializing run store")
                 await self._store.start_run(run.run_id, run)
                 if resume:
+                    self._system_logger.info("orchestrator", "Loading checkpoint for resume")
                     checkpoint = await self._store.load_checkpoint(run.run_id)
                     self._gate_pruned_nodes = await self._store.load_gate_pruning(run.run_id)
                     # Resume event sequence continuity
@@ -568,6 +804,7 @@ class Orchestrator:
                         self._event_seq = last_seq
                         
         except Exception as e:
+            self._system_logger.error("orchestrator", f"Failed to initialize persistence: {str(e)}")
             logger.error(f"Failed to initialize persistence for run {run.run_id}: {e}")
             # Continue without persistence
         
@@ -691,22 +928,22 @@ class Orchestrator:
                 if key in result:
                     value = result[key]
                     if isinstance(value, str) and value.strip():
-                        return value.strip()[:200]  # Limit to 200 chars
+                        return value.strip()  # No truncation
                     elif value is not None:
-                        return str(value)[:200]
+                        return str(value)  # No truncation
             
             # Fallback to first non-empty string value
             for value in result.values():
                 if isinstance(value, str) and value.strip():
-                    return value.strip()[:200]
+                    return value.strip()  # No truncation
         
         # Handle direct string results
         elif isinstance(result, str) and result.strip():
-            return result.strip()[:200]
+            return result.strip()  # No truncation
         
         # Fallback to string representation
         elif result is not None:
-            return str(result)[:200]
+            return str(result)  # No truncation
         
         return None
     
@@ -724,14 +961,25 @@ class Orchestrator:
                 # Handle references to other nodes
                 if isinstance(value, str) and value in ctx["blackboard"]:
                     blackboard_entry = ctx["blackboard"][value]
+                    
+                    # Debug logging for blackboard retrieval
+                    logger.info(f"BLACKBOARD RETRIEVE: Node {node.id} requesting data from {value}")
+                    logger.info(f"BLACKBOARD RETRIEVE: Entry type: {type(blackboard_entry)}")
+                    logger.info(f"BLACKBOARD RETRIEVE: Entry keys: {list(blackboard_entry.keys()) if isinstance(blackboard_entry, dict) else 'Not dict'}")
+                    
                     # Extract actual result from blackboard entry structure
                     if isinstance(blackboard_entry, dict) and "result" in blackboard_entry:
                         actual_value = blackboard_entry["result"]
+                        logger.info(f"BLACKBOARD RETRIEVE: Result type: {type(actual_value)}")
+                        logger.info(f"BLACKBOARD RETRIEVE: Result keys: {list(actual_value.keys()) if isinstance(actual_value, dict) else 'Not dict'}")
                         # Further extract if nested
                         if isinstance(actual_value, dict) and "output" in actual_value:
                             actual_value = actual_value["output"]
+                            logger.info(f"BLACKBOARD RETRIEVE: Final output type: {type(actual_value)}")
+                            logger.info(f"BLACKBOARD RETRIEVE: Final output preview: {str(actual_value)[:200]}...")
                     else:
                         actual_value = blackboard_entry
+                        logger.info(f"BLACKBOARD RETRIEVE: Direct value type: {type(actual_value)}")
                     prompt_parts.append(f"- {key}: {actual_value}")
                 else:
                     prompt_parts.append(f"- {key}: {value}")

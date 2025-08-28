@@ -33,7 +33,7 @@ try:
     from rich.live import Live
     from rich.align import Align
 except ImportError:
-    print("CLI dependencies not installed. Run: pip install 'agentic-orchestra[cli]'")
+    print("CLI dependencies not installed. Run: pip install 'agent-orchestra[cli]'")
     sys.exit(1)
 
 # Cross-platform keyboard input handling

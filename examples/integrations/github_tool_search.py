@@ -4,8 +4,6 @@ import os
 import sys
 from pathlib import Path
 
-# Add src to path for local development
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI

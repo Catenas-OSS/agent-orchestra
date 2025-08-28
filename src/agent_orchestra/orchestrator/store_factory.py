@@ -11,6 +11,7 @@ from typing import Union, Optional, Dict, Any
 
 from .store import JsonlRunStore
 from .store_sqlite import SQLiteRunStore
+from ..logging import get_system_logger
 
 
 def create_store(
@@ -51,11 +52,19 @@ def create_store(
             raise ValueError(f"Unknown store kind: {kind}. Use 'jsonl' or 'sqlite'")
     
     # Create store instance
+    system_logger = get_system_logger()
+    system_logger.info("store_factory", f"Creating {kind} store at: {path}")
+    
     if kind == "sqlite":
-        return SQLiteRunStore(db_path=path, **kwargs)
+        store = SQLiteRunStore(db_path=path, **kwargs)
+        system_logger.info("store_factory", f"SQLite store created: {path}")
+        return store
     elif kind == "jsonl":
-        return JsonlRunStore(root=path, **kwargs)
+        store = JsonlRunStore(root=path, **kwargs)
+        system_logger.info("store_factory", f"JSONL store created: {path}")
+        return store
     else:
+        system_logger.error("store_factory", f"Unknown store kind: {kind}")
         raise ValueError(f"Unknown store kind: {kind}. Use 'jsonl' or 'sqlite'")
 
 
@@ -230,6 +239,9 @@ def validate_store_config() -> Dict[str, Any]:
 
 def print_store_config():
     """Print current store configuration and validation results."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     config = validate_store_config()
     
     print("🏪 Agent Orchestra Store Configuration")
@@ -243,28 +255,31 @@ def print_store_config():
         print(f"Legacy runs dir: {config['legacy_runs_dir']}")
     
     if config['issues']:
-        print("\\n⚠️  Issues:")
+        print("\n⚠️  Issues:")
         for issue in config['issues']:
             print(f"   • {issue}")
+            logger.warning(f"Store config issue: {issue}")
     
     if config['recommendations']:
-        print("\\n💡 Recommendations:")
+        print("\n💡 Recommendations:")
         for rec in config['recommendations']:
             print(f"   • {rec}")
+            logger.info(f"Store config recommendation: {rec}")
     
     if not config['issues']:
-        print("\\n✅ Configuration looks good!")
+        print("\n✅ Configuration looks good!")
+        logger.info("Store configuration validated successfully")
 
 
-# Example usage and documentation
-if __name__ == "__main__":
+def _run_examples():
+    """Run store factory examples for testing and demonstration."""
     print("🏪 Store Factory Examples")
     print("=" * 30)
     
     # Show current configuration
     print_store_config()
     
-    print("\\nExample store creation:")
+    print("\nExample store creation:")
     
     # Create different types of stores
     examples = [
@@ -284,8 +299,12 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ {name}: {e}")
     
-    print("\\nEnvironment variables:")
+    print("\nEnvironment variables:")
     print("  AO_STORE=sqlite|jsonl")
     print("  AO_STORE_PATH=/path/to/store")
     print("  AO_DB_PATH=/path/to/db.sqlite3 (legacy)")
     print("  AO_RUNS_DIR=/path/to/runs (legacy)")
+
+
+if __name__ == "__main__":
+    _run_examples()

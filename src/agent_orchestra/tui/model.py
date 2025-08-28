@@ -49,6 +49,7 @@ class NodeState:
     name: Optional[str] = None
     server: Optional[str] = None
     model: Optional[str] = None
+    node_type: Optional[str] = None
     status: Literal["pending", "running", "complete", "resumed", "error", "skipped"] = "pending"
     
     # Timing
@@ -66,12 +67,21 @@ class NodeState:
     # Logs and chunks (bounded)
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=300))
     
+    # Supervisor-specific fields
+    available_agents: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    max_agent_calls: int = 5
+    agents_called: List[str] = field(default_factory=list)
+    supervisor_decisions: List[str] = field(default_factory=list)
+    agent_results: Dict[str, Any] = field(default_factory=dict)
+    
     # Tool executions
     tool_trace: List[ToolRow] = field(default_factory=list)
     
     # Instructions and context
     instructions: Optional[InstructionFingerprint] = None
-    resolved_inputs: Dict[str, Any] = field(default_factory=dict)
+    inputs: Dict[str, Any] = field(default_factory=dict)  # Raw inputs from workflow definition
+    resolved_inputs: Dict[str, Any] = field(default_factory=dict)  # Resolved inputs with data from other nodes
+    blackboard_data: Dict[str, Any] = field(default_factory=dict)  # Blackboard context for debugging
     
     # Output and artifacts
     output_summary: str = ""
@@ -96,6 +106,11 @@ class NodeState:
     def is_foreach(self) -> bool:
         """Check if this is a foreach node."""
         return self.items_total is not None
+    
+    @property
+    def is_supervisor(self) -> bool:
+        """Check if this is a supervisor node."""
+        return self.node_type == "supervisor"
 
 
 @dataclass
@@ -183,8 +198,15 @@ class RunTUIModel:
                 node.max_attempts = data.get("max_attempts", 1)
                 node.server = data.get("server_name")
                 node.model = data.get("model")
+                node.node_type = data.get("node_type")
                 
-                self.system_events.append(f"▶️ {node.name or node_id} started")
+                # Handle supervisor-specific initialization
+                if node.node_type == "supervisor":
+                    node.available_agents = data.get("available_agents", {})
+                    node.max_agent_calls = data.get("max_agent_calls", 5)
+                    self.system_events.append(f"🧠 SUPERVISOR {node.name or node_id} started with {len(node.available_agents)} agents")
+                else:
+                    self.system_events.append(f"▶️ {node.name or node_id} started")
         
         elif event_type == "AGENT_INSTRUCTIONS" and node_id:
             # Handle new AGENT_INSTRUCTIONS event
@@ -198,6 +220,21 @@ class RunTUIModel:
                     context=data.get("context", {}),
                 )
                 self.nodes[node_id].instructions = instructions
+                
+                # Extract resolved inputs from the task body to understand data flow
+                task_body = data.get("task", {}).get("body", "")
+                if task_body and ":" in task_body:
+                    # Try to parse resolved inputs from prompt
+                    try:
+                        lines = task_body.split('\n')
+                        for line in lines:
+                            if line.strip().startswith('- ') and ':' in line:
+                                key_value = line.strip()[2:]  # Remove '- '
+                                if ':' in key_value:
+                                    key, value = key_value.split(':', 1)
+                                    self.nodes[node_id].resolved_inputs[key.strip()] = value.strip()
+                    except:
+                        pass  # Failed to parse, not critical
         
         elif event_type == "TOOL_START" and node_id:
             # Handle new TOOL_START event
@@ -233,15 +270,15 @@ class RunTUIModel:
                 self.system_events.append(f"🔄 {node.name or node_id} retry #{node.attempt} ({reason}, delay: {delay}s)")
         
         elif event_type == "AGENT_CHUNK" and node_id:
-            # Extract meaningful text from the chunk
+            # Enhanced agent chunk processing for detailed agent observability
             text = ""
-            if isinstance(data, dict):
-                text = data.get("text") or data.get("message") or str(data)[:200]
+            if isinstance(data, dict) and node_id in self.nodes:
+                node = self.nodes[node_id]
                 
                 # Extract token usage from chunks (MCP agents include this)
-                if "usage" in data and node_id in self.nodes:
+                if "usage" in data:
                     usage = data["usage"]
-                    self.nodes[node_id].tokens_used = {
+                    node.tokens_used = {
                         "prompt": usage.get("prompt_tokens", 0),
                         "completion": usage.get("completion_tokens", 0), 
                         "total": usage.get("total_tokens", 0)
@@ -251,23 +288,52 @@ class RunTUIModel:
                     self.metrics.total_tokens_out += usage.get("completion_tokens", 0)
                 
                 # Extract cost from chunks
-                if "cost" in data and node_id in self.nodes:
+                if "cost" in data:
                     cost = data["cost"]
-                    self.nodes[node_id].cost = cost
+                    node.cost = cost
                     self.metrics.total_cost += cost
                 
-                # Extract step information (detailed agent reasoning)
-                if "step" in data and node_id in self.nodes:
-                    step_info = data["step"]
-                    step_text = f"STEP: {step_info}"
-                    self.nodes[node_id].logs.append(step_text)
-                    text = step_text  # Use step info as the main text
+                # Enhanced thinking/reasoning detection with XML tag parsing
+                from ..orchestrator.thinking_parser import extract_thinking_content, format_thinking_for_display, has_thinking_content
                 
-                # Extract tool calls
-                if "tool_call" in data and node_id in self.nodes:
-                    tool_call = data["tool_call"]
-                    tool_name = tool_call.get("name", "unknown")
-                    tool_args = str(tool_call.get("args", {}))[:100]
+                chunk_text = data.get("text", "") or data.get("message", "") or data.get("content", "")
+                
+                # Special handling for supervisor nodes
+                if node.is_supervisor and chunk_text:
+                    # Look for supervisor decision patterns
+                    if "AGENT_CALL:" in chunk_text or "CALL_AGENT:" in chunk_text:
+                        decision_text = f"🎯 SUPERVISOR DECISION: {chunk_text}"
+                        node.logs.append(decision_text)
+                        node.supervisor_decisions.append(chunk_text)
+                        text = decision_text
+                    elif "choosing" in chunk_text.lower() or "will call" in chunk_text.lower() or "selected" in chunk_text.lower():
+                        reasoning_text = f"🧠 SUPERVISOR REASONING: {chunk_text}"
+                        node.logs.append(reasoning_text)
+                        text = reasoning_text
+                
+                # First try to extract thinking from XML tags
+                thinking_content = extract_thinking_content(chunk_text)
+                if thinking_content:
+                    # Found structured thinking content
+                    formatted_thinking = format_thinking_for_display(thinking_content, 300)
+                    thinking_text = f"💭 THINKING: {formatted_thinking}"
+                    self.nodes[node_id].logs.append(thinking_text)
+                    text = thinking_text
+                
+                # Fallback to keyword-based detection for unstructured thinking
+                elif not thinking_content:
+                    thinking_indicators = ["thinking", "reasoning", "analysis", "plan", "approach", "strategy"]
+                    if any(indicator in chunk_text.lower() for indicator in thinking_indicators):
+                        # This looks like thinking/reasoning
+                        thinking_text = f"💭 THINKING: {chunk_text[:300]}"
+                        self.nodes[node_id].logs.append(thinking_text)
+                        text = thinking_text
+                    
+                elif "tool_use" in data or "tool_call" in data:
+                    # Tool invocation
+                    tool_data = data.get("tool_call") or data.get("tool_use", {})
+                    tool_name = tool_data.get("name", "unknown")
+                    tool_args = str(tool_data.get("arguments", tool_data.get("args", {})))[:150]
                     
                     # Create tool row
                     tool_row = ToolRow(
@@ -276,13 +342,49 @@ class RunTUIModel:
                         args_preview=tool_args
                     )
                     self.nodes[node_id].tool_trace.append(tool_row)
-                    text = f"TOOL: {tool_name}({tool_args})"
+                    
+                    tool_text = f"🔧 TOOL: {tool_name}({tool_args})"
+                    self.nodes[node_id].logs.append(tool_text)
+                    text = tool_text
+                    
+                elif "tool_result" in data:
+                    # Tool result
+                    result = data["tool_result"]
+                    result_text = str(result)[:200]
+                    result_log = f"📄 RESULT: {result_text}"
+                    self.nodes[node_id].logs.append(result_log)
+                    text = result_log
+                    
+                    # Update last tool with completion info
+                    if self.nodes[node_id].tool_trace:
+                        self.nodes[node_id].tool_trace[-1].ended_at = time.time()
+                        self.nodes[node_id].tool_trace[-1].diff_preview = result_text
                 
-                # Extract final output
-                if "output" in data and node_id in self.nodes:
+                elif "step" in data:
+                    # Agent step information
+                    step_info = data["step"]
+                    step_text = f"📝 STEP: {step_info}"
+                    self.nodes[node_id].logs.append(step_text)
+                    text = step_text
+                
+                elif "output" in data:
+                    # Final output - capture full output for display
                     output = data["output"]
-                    self.nodes[node_id].output_summary = str(output)[:200]
-                    text = f"OUTPUT: {output}"
+                    self.nodes[node_id].output_summary = str(output)  # Store full output, not truncated
+                    output_text = f"🎯 FINAL OUTPUT: {str(output)}"  # No truncation
+                    self.nodes[node_id].logs.append(output_text)
+                    text = output_text
+                
+                elif chunk_text.strip():
+                    # Regular text content (could be partial thinking or response)
+                    if len(chunk_text) > 50:  # Substantial text, likely reasoning
+                        reasoning_text = f"🧠 AGENT: {chunk_text}"  # No truncation
+                        self.nodes[node_id].logs.append(reasoning_text)
+                        text = reasoning_text
+                    else:
+                        # Short text, just add to logs without special formatting
+                        self.nodes[node_id].logs.append(chunk_text)
+                        text = chunk_text
             else:
                 text = str(data)[:200]
             
@@ -305,9 +407,34 @@ class RunTUIModel:
                 node.status = "resumed" if data.get("resumed") else "complete"
                 node.ended_at = data.get("ended_at", time.time())
                 
-                # Enhanced completion data
-                node.output_summary = data.get("output_summary", "")
+                # Enhanced completion data - store full output for visibility
+                output_summary = data.get("output_summary", "")
+                if output_summary:
+                    node.output_summary = str(output_summary)
+                    # Add prominent completion log
+                    if node.is_supervisor:
+                        completion_log = f"🏁 SUPERVISOR COMPLETED: {str(output_summary)}"
+                    else:
+                        completion_log = f"🏁 AGENT COMPLETED: {str(output_summary)}"
+                    node.logs.append(completion_log)
+                
                 node.artifacts = data.get("artifacts", [])
+                
+                # Handle supervisor-specific completion data
+                if node.is_supervisor:
+                    agents_called = data.get("agents_called", 0)
+                    if isinstance(agents_called, int):
+                        node.agents_called = [f"agent_{i}" for i in range(agents_called)]
+                    elif isinstance(agents_called, list):
+                        node.agents_called = agents_called
+                    
+                    # Extract agent results if available
+                    if "agent_results" in data:
+                        node.agent_results = data["agent_results"]
+                    
+                    self.system_events.append(f"🧠 SUPERVISOR {node.name or node_id} completed - called {len(node.agents_called)} agents")
+                else:
+                    self.system_events.append(f"✅ {node.name or node_id} completed")
                 
                 # Token and cost tracking
                 if "tokens" in data:
@@ -322,8 +449,6 @@ class RunTUIModel:
                 # Set items_total if available  
                 if "items_total" in data:
                     node.items_total = data["items_total"]
-                
-                self.system_events.append(f"✅ {node.name or node_id} completed")
         
         elif event_type == "ERROR":
             self.status = "error"

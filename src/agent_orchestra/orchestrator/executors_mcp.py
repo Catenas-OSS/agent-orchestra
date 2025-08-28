@@ -4,6 +4,7 @@ from ..sidecar.sidecar_agent import SidecarMCPAgent
 from .types import NodeSpec
 from .call_broker import CallBroker
 from .agent_pool import AgentPool, AgentSpec
+from ..logging import get_system_logger
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ class MCPExecutor:
         self._broker = broker
         self._agent_pool = agent_pool
         self._model_key = model_key
+        self._system_logger = get_system_logger()
         
         # Try to detect model from agent for broker routing
         self._model_name = self._detect_model_name(agent) if agent else f"unknown:{model_key}"
@@ -27,10 +29,15 @@ class MCPExecutor:
         
         if self._broker:
             logger.info(f"MCPExecutor initialized with CallBroker for model: {self._model_name}")
+            self._system_logger.info("mcp_executor", f"Initialized with CallBroker for model: {self._model_name}")
         if self._agent_pool:
             logger.info("MCPExecutor initialized with AgentPool for profile-based agent reuse")
+            self._system_logger.info("mcp_executor", "Initialized with AgentPool for profile-based agent reuse")
         if not self._broker and not self._agent_pool:
             logger.debug("MCPExecutor initialized with direct agent calls (no broker/pool)")
+            self._system_logger.debug("mcp_executor", "Initialized with direct agent calls (no broker/pool)")
+        
+        self._system_logger.info("mcp_executor", f"MCPExecutor ready with model: {self._model_name}")
     
     def _detect_model_name(self, agent: SidecarMCPAgent) -> str:
         """Attempt to detect the model name from the agent for broker routing."""
@@ -116,33 +123,59 @@ class MCPExecutor:
     
     async def execute(self, node: NodeSpec, ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Execute node using MCP agent, returning final result."""
-        # Get agent for execution (from pool or direct)
-        agent = await self._get_agent(node)
+        self._system_logger.info("mcp_executor", f"Starting node execution: {node.id}", node_id=node.id)
+        # Get node description for logging
+        node_desc = getattr(node, 'name', node.id) or str(node.inputs) if hasattr(node, 'inputs') else 'Unknown'
+        self._system_logger.debug("mcp_executor", f"Node description: {str(node_desc)[:100]}...", node_id=node.id)
         
-        # Prepare context for agent execution
-        prompt = self._build_prompt(node, ctx)
-        
-        # Route through broker if available, otherwise direct agent call
-        if self._broker:
-            # Use broker for rate limiting and retries
-            async def agent_call() -> Any:
-                # Pass server_name to agent for routing
-                server_name = node.server_name or self._default_server
+        try:
+            # Get agent for execution (from pool or direct)
+            self._system_logger.debug("mcp_executor", "Acquiring agent for execution", node_id=node.id)
+            agent = await self._get_agent(node)
+            
+            # Prepare context for agent execution
+            self._system_logger.debug("mcp_executor", "Building execution prompt", node_id=node.id)
+            prompt = self._build_prompt(node, ctx)
+            
+            # Log execution details
+            server_name = node.server_name or self._default_server
+            if server_name:
+                self._system_logger.info("mcp_executor", f"Executing with server: {server_name}", node_id=node.id)
+            
+            # Route through broker if available, otherwise direct agent call
+            if self._broker:
+                self._system_logger.info("mcp_executor", f"Routing through CallBroker (model: {self._model_name})", node_id=node.id)
+                # Use broker for rate limiting and retries
+                async def agent_call() -> Any:
+                    # Pass server_name to agent for routing
+                    kwargs = {}
+                    if server_name:
+                        kwargs["server_name"] = server_name
+                    self._system_logger.debug("mcp_executor", "Calling agent through broker", node_id=node.id)
+                    return await agent.run(prompt, **kwargs)
+                
+                result = await self._broker.call_agent_regular(self._model_name, agent_call)
+                self._system_logger.info("mcp_executor", "Broker call completed successfully", node_id=node.id)
+            else:
+                self._system_logger.info("mcp_executor", "Direct agent call (no broker)", node_id=node.id)
+                # Direct agent call (backward compatibility)
                 kwargs = {}
                 if server_name:
                     kwargs["server_name"] = server_name
-                return await agent.run(prompt, **kwargs)
+                result = await agent.run(prompt, **kwargs)
+                self._system_logger.info("mcp_executor", "Direct agent call completed", node_id=node.id)
             
-            result = await self._broker.call_agent_regular(self._model_name, agent_call)
-        else:
-            # Direct agent call (backward compatibility)
-            server_name = node.server_name or self._default_server
-            kwargs = {}
-            if server_name:
-                kwargs["server_name"] = server_name
-            result = await agent.run(prompt, **kwargs)
-        
-        return {"output": result}
+            # Log result summary
+            result_summary = str(result) if result else "None"
+            self._system_logger.info("mcp_executor", f"Node execution completed successfully", node_id=node.id)
+            self._system_logger.debug("mcp_executor", f"Result preview: {result_summary}", node_id=node.id)
+            
+            return {"output": result}
+            
+        except Exception as e:
+            self._system_logger.error("mcp_executor", f"Node execution failed: {str(e)}", node_id=node.id)
+            self._system_logger.debug("mcp_executor", f"Full error details: {repr(e)}", node_id=node.id)
+            raise
     
     async def execute_with_stream(
         self, 
@@ -159,7 +192,7 @@ class MCPExecutor:
         
         # Route through broker if available, otherwise direct agent call
         final_result = None
-        last_text = None
+        accumulated_text = ""  # Accumulate all text content
         
         if self._broker:
             # Use broker for rate limiting, retries, and chunk passthrough
@@ -174,14 +207,16 @@ class MCPExecutor:
             async for chunk in self._broker.call_agent_streaming(self._model_name, agent_stream):
                 # Broker passes chunks through unchanged - perfect for AGENT_CHUNK events
                 await on_chunk(chunk)
-                # Capture the final result from the last chunk with output
+                # Capture and accumulate content
                 if isinstance(chunk, dict):
                     if "output" in chunk:
                         final_result = chunk["output"]
-                    elif "text" in chunk:
-                        last_text = chunk["text"]
+                    elif "text" in chunk and chunk["text"]:
+                        accumulated_text += str(chunk["text"])
                     elif "message" in chunk and isinstance(chunk["message"], str):
-                        last_text = chunk["message"]
+                        accumulated_text += chunk["message"]
+                elif isinstance(chunk, str):
+                    accumulated_text += chunk
         else:
             # Direct agent streaming (backward compatibility)
             server_name = node.server_name or self._default_server
@@ -190,17 +225,20 @@ class MCPExecutor:
                 kwargs["server_name"] = server_name
             async for chunk in agent.astream(prompt, **kwargs):  # type: ignore
                 await on_chunk(chunk)
-                # Capture the final result from the last chunk with output
+                # Capture and accumulate content
                 if isinstance(chunk, dict):
                     if "output" in chunk:
                         final_result = chunk["output"]
-                    elif "text" in chunk:
-                        last_text = chunk["text"]
+                    elif "text" in chunk and chunk["text"]:
+                        accumulated_text += str(chunk["text"])
                     elif "message" in chunk and isinstance(chunk["message"], str):
-                        last_text = chunk["message"]
+                        accumulated_text += chunk["message"]
+                elif isinstance(chunk, str):
+                    accumulated_text += chunk
         
-        # Return output or fall back to last text if no output was captured
-        return {"output": final_result if final_result is not None else last_text}
+        # Use final_result if available, otherwise use accumulated text
+        final_output = final_result if final_result is not None else accumulated_text.strip()
+        return {"output": final_output}
     
     def _build_prompt(self, node: NodeSpec, ctx: Dict[str, Any]) -> str:
         """Build prompt for agent execution from node spec and context."""

@@ -1,3 +1,4 @@
+
 """
 Professional Interactive TUI using Urwid - True terminal interaction.
 4-pane layout: Header / Left (Node Navigator) / Center (Agent Inspector) / Right (Ops Panels)
@@ -15,6 +16,7 @@ except ImportError:
 
 from .model import RunTUIModel, NodeState
 from .bus import EventBus, Subscription
+from ..logging import get_system_logger, init_logging
 
 if TYPE_CHECKING:
     from ..orchestrator.core import Orchestrator
@@ -39,16 +41,21 @@ class ProfessionalUrwidTUI:
         self.model = model
         self.bus = EventBus()
         
+        # Initialize logging for TUI mode and IMMEDIATELY enable output capture
+        self.system_logger = init_logging(tui_mode=True)
+        self.system_logger.enable_tui_mode()  # Force enable immediately
+        self.system_logger.info("tui", "Professional TUI initialized with output capture enabled")
+        
         # UI state
-        self.selected_node_index = 0
+        self.selected_node_index = -1  # Start with system logs selected
         self.current_inspector_tab = 0  # 0=Snapshot, 1=Instructions, etc.
         self.should_exit = False
         self.metrics_update_interval = 1.0
         
         # Tab names for inspector
         self.inspector_tabs = [
-            "Snapshot", "Instructions", "Inputs", "Tool Trace", "Output", 
-            "Limits", "Performance", "Policy", "Reproducibility", "Errors"
+            "Snapshot", "Instructions", "Inputs", "Data Flow", "Output", 
+            "Tool Trace", "Supervisor", "Limits", "Performance", "Policy", "Reproducibility", "Errors"
         ]
         
         # Create widgets
@@ -89,7 +96,7 @@ class ProfessionalUrwidTUI:
         self.inspector_content = urwid.Text("No node selected\nUse ↑↓ to select a node")
         self.inspector_listbox = urwid.ListBox(urwid.SimpleFocusListWalker([self.inspector_content]))
         
-        # Right panel - Ops
+        # Right panel - Ops (back to 3 panels)
         self.metrics_text = urwid.Text("")
         self.logs_text = urwid.Text("")
         self.dag_text = urwid.Text("")
@@ -119,10 +126,10 @@ class ProfessionalUrwidTUI:
             title="🔍 Agent Inspector"
         )
         
-        # Right panel - Ops (three sections)
+        # Right panel - Ops (back to 3 sections)
         ops_pile = urwid.Pile([
             ('weight', 1, urwid.LineBox(urwid.Filler(self.metrics_text, 'top'), title="📈 Metrics")),
-            ('weight', 1, urwid.LineBox(urwid.Filler(self.logs_text, 'top'), title="📋 Logs")),
+            ('weight', 1, urwid.LineBox(urwid.Filler(self.logs_text, 'top'), title="📋 Events")),
             ('weight', 1, urwid.LineBox(urwid.Filler(self.dag_text, 'top'), title="🗺️ DAG"))
         ])
         
@@ -175,6 +182,15 @@ class ProfessionalUrwidTUI:
         """Update the node navigator list."""
         self.node_list_walker.clear()
         
+        # Add system logs as the first option
+        system_logs_button = urwid.Button("🖥️ System Logs", on_press=self._node_selected, user_data=-1)
+        if self.selected_node_index == -1:
+            widget = urwid.AttrMap(system_logs_button, 'selected', 'focus')
+        else:
+            widget = urwid.AttrMap(system_logs_button, 'bright', 'focus')
+        self.node_list_walker.append(widget)
+        
+        # Add regular nodes
         for i, (node_id, node) in enumerate(self.model.nodes.items()):
             # Status symbol
             if node.status == "pending":
@@ -236,14 +252,18 @@ class ProfessionalUrwidTUI:
             for i, tab in enumerate(self.inspector_tabs)
         ])
         
-        # Get selected node
-        nodes = list(self.model.nodes.values())
-        selected_node = nodes[self.selected_node_index] if 0 <= self.selected_node_index < len(nodes) else None
-        
-        if not selected_node:
-            content = "No node selected\nUse ↑↓ to select a node"
+        # Check if system logs is selected
+        if self.selected_node_index == -1:
+            content = self._render_system_logs_tab()
         else:
-            content = self._render_inspector_tab(selected_node, self.current_inspector_tab)
+            # Get selected node
+            nodes = list(self.model.nodes.values())
+            selected_node = nodes[self.selected_node_index] if 0 <= self.selected_node_index < len(nodes) else None
+            
+            if not selected_node:
+                content = "No node selected\nUse ↑↓ to select a node"
+            else:
+                content = self._render_inspector_tab(selected_node, self.current_inspector_tab)
         
         # Update inspector content (scrollable)
         # Split content into lines and create text widgets for scrolling
@@ -270,10 +290,14 @@ class ProfessionalUrwidTUI:
             return self._render_instructions_tab(node)
         elif tab_name == "Inputs":
             return self._render_inputs_tab(node)
-        elif tab_name == "Tool Trace":
-            return self._render_tool_trace_tab(node)
+        elif tab_name == "Data Flow":
+            return self._render_data_flow_tab(node)
         elif tab_name == "Output":
             return self._render_output_tab(node)
+        elif tab_name == "Tool Trace":
+            return self._render_tool_trace_tab(node)
+        elif tab_name == "Supervisor":
+            return self._render_supervisor_tab(node)
         elif tab_name == "Limits":
             return self._render_limits_tab(node)
         elif tab_name == "Performance":
@@ -296,6 +320,7 @@ class ProfessionalUrwidTUI:
             f"📋 Node ID: {node.id}",
             f"🏷️  Name: {node.name or 'Unnamed'}",
             f"🎯 Status: {node.status.upper()}",
+            f"🤖 Type: {node.node_type or 'task'}",
             f"🖥️  Server: {node.server or 'default'}",
             f"🤖 Model: {node.model or 'unknown'}",
             f"🔄 Attempts: {node.attempt}/{node.max_attempts}",
@@ -335,6 +360,29 @@ class ProfessionalUrwidTUI:
             lines.append("  Cost: Not calculated")
         lines.append("")
         
+        # Supervisor-specific info
+        if node.is_supervisor:
+            lines.append("🧠 SUPERVISOR INFO:")
+            lines.append(f"  Available agents: {len(node.available_agents)}")
+            lines.append(f"  Max agent calls: {node.max_agent_calls}")
+            lines.append(f"  Agents called: {len(node.agents_called)}")
+            
+            if node.available_agents:
+                lines.append("  Agent roster:")
+                for agent_id, agent_info in node.available_agents.items():
+                    description = agent_info.get("description", "No description")[:40]
+                    lines.append(f"    • {agent_id}: {description}")
+            
+            if node.agents_called:
+                lines.append("  Called agents:")
+                for agent_id in node.agents_called:
+                    lines.append(f"    ✅ {agent_id}")
+            
+            if node.supervisor_decisions:
+                lines.append(f"  Decisions made: {len(node.supervisor_decisions)}")
+            
+            lines.append("")
+        
         # Activity summary
         lines.append("📊 ACTIVITY SUMMARY:")
         lines.append(f"  Log entries: {len(node.logs)}")
@@ -373,10 +421,11 @@ class ProfessionalUrwidTUI:
         elif node.status == "complete":
             lines.append("✅ COMPLETION INFO:")
             if node.output_summary:
-                summary_preview = node.output_summary[:60] + "..." if len(node.output_summary) > 60 else node.output_summary
-                lines.append(f"  Output: {summary_preview}")
+                # Show more of the output for visibility
+                summary_preview = node.output_summary  # No truncation
+                lines.append(f"  🎯 Agent Output: {summary_preview}")
             else:
-                lines.append("  No output summary available")
+                lines.append("  ⚠️ No output captured - agent may not have produced structured output")
         
         elif node.status == "running":
             lines.append("⚡ LIVE STATUS:")
@@ -473,28 +522,213 @@ class ProfessionalUrwidTUI:
         
         return "\n".join(lines)
     
-    def _render_output_tab(self, node: NodeState) -> str:
-        """Render the Output tab with enhanced developer information."""
-        lines = ["=== AGENT OUTPUT ===", ""]
+    def _render_supervisor_tab(self, node: NodeState) -> str:
+        """Render the Supervisor tab with detailed orchestration information."""
+        if not node.is_supervisor:
+            return "This node is not a supervisor agent.\nSupervisor agents orchestrate other specialized agents to complete complex tasks."
         
-        # Show raw agent logs (this contains the actual LLM responses)
-        if node.logs:
-            lines.append("Raw Agent Output:")
+        lines = ["🧠 === SUPERVISOR ORCHESTRATION === 🧠", ""]
+        
+        # Supervisor configuration
+        lines.append("⚙️ CONFIGURATION:")
+        lines.append(f"  Max agent calls: {node.max_agent_calls}")
+        lines.append(f"  Available agents: {len(node.available_agents)}")
+        lines.append("")
+        
+        # Available agents roster
+        if node.available_agents:
+            lines.append("🤖 AGENT ROSTER:")
             lines.append("-" * 40)
-            # Show more logs for developers
-            recent_logs = list(node.logs)[-10:]  # Last 10 log entries
-            for i, log in enumerate(recent_logs):
-                lines.append(f"[{i+1}] {log}")
-                # Add separator for readability
-                if i < len(recent_logs) - 1:
-                    lines.append("")
-            lines.append("-" * 40)
+            for agent_id, agent_info in node.available_agents.items():
+                description = agent_info.get("description", "No description")
+                server = agent_info.get("server", "unknown")
+                capabilities = agent_info.get("capabilities", [])
+                
+                lines.append(f"  • {agent_id}")
+                lines.append(f"    📝 {description}")
+                lines.append(f"    🖥️  Server: {server}")
+                if capabilities:
+                    lines.append(f"    🎯 Capabilities: {', '.join(capabilities)}")
+                lines.append("")
+        else:
+            lines.append("No agents available for orchestration")
             lines.append("")
         
-        # Output summary (extracted/normalized)
+        # Supervisor decision history
+        if node.supervisor_decisions:
+            lines.append("🎯 DECISION HISTORY:")
+            lines.append("-" * 40)
+            for i, decision in enumerate(node.supervisor_decisions, 1):
+                lines.append(f"  [{i}] {decision}")
+            lines.append("")
+        else:
+            lines.append("No decisions recorded yet")
+            lines.append("")
+        
+        # Agents called and their results
+        if node.agents_called:
+            lines.append("✅ AGENTS CALLED:")
+            lines.append("-" * 40)
+            for agent_id in node.agents_called:
+                lines.append(f"  • {agent_id}")
+                if agent_id in node.agent_results:
+                    result = node.agent_results[agent_id]
+                    result_preview = str(result)[:100] + "..." if len(str(result)) > 100 else str(result)
+                    lines.append(f"    📄 Result: {result_preview}")
+                else:
+                    lines.append("    ⏳ Result pending...")
+            lines.append("")
+        else:
+            lines.append("No agents called yet")
+            lines.append("")
+        
+        # Orchestration summary
+        lines.append("📊 ORCHESTRATION SUMMARY:")
+        lines.append("-" * 40)
+        lines.append(f"  Total agents available: {len(node.available_agents)}")
+        lines.append(f"  Agents called: {len(node.agents_called)}")
+        lines.append(f"  Decisions made: {len(node.supervisor_decisions)}")
+        if node.agents_called:
+            success_rate = len([r for r in node.agent_results.values() if r]) / len(node.agents_called) * 100
+            lines.append(f"  Success rate: {success_rate:.1f}%")
+        lines.append("")
+        
+        # Final output
         if node.output_summary:
-            lines.append("Normalized Output Summary:")
-            lines.append(f"'{node.output_summary}'")
+            lines.append("🎯 FINAL SUPERVISOR OUTPUT:")
+            lines.append("-" * 40)
+            lines.append(node.output_summary)
+        
+        return "\n".join(lines)
+    
+    def _render_data_flow_tab(self, node: NodeState) -> str:
+        """Render the Data Flow tab showing how data passes between agents."""
+        lines = ["🔄 === DATA FLOW & AGENT CHAINING === 🔄", ""]
+        
+        # Show what this node receives from previous nodes
+        lines.append("📥 INPUTS FROM PREVIOUS AGENTS:")
+        lines.append("-" * 40)
+        
+        # Check if this node has inputs from other nodes
+        has_inputs = False
+        
+        # Show raw inputs from workflow definition
+        if hasattr(node, 'inputs') and node.inputs:
+            lines.append("  📋 Workflow Definition Inputs:")
+            for key, value in node.inputs.items():
+                if key == "from":
+                    lines.append(f"    🔗 Receives output from: {value}")
+                    has_inputs = True
+                elif key != "instruction":
+                    lines.append(f"    📊 {key}: {str(value)}")
+                    has_inputs = True
+            lines.append("")
+        
+        # Show resolved inputs (actual data received from other agents)
+        if hasattr(node, 'resolved_inputs') and node.resolved_inputs:
+            lines.append("  ✅ RESOLVED DATA FROM OTHER AGENTS:")
+            for key, value in node.resolved_inputs.items():
+                lines.append(f"    🎯 {key}: {str(value)}")
+            has_inputs = True
+            lines.append("")
+        
+        if not has_inputs:
+            lines.append("  ℹ️  This node doesn't receive data from other agents")
+            lines.append("  (It's likely the first node in the workflow)")
+        
+        lines.append("-" * 40)
+        lines.append("")
+        
+        # Show what data this node will pass to next nodes
+        lines.append("📤 OUTPUTS TO NEXT AGENTS:")
+        lines.append("-" * 40)
+        
+        if node.output_summary:
+            lines.append("  🎯 This agent's output (available to next nodes):")
+            lines.append(f"     {node.output_summary}")
+            lines.append("")
+            lines.append("  📋 Data format: This output becomes input for downstream agents")
+        else:
+            if node.status == "complete":
+                lines.append("  ⚠️  No output captured - next agents may not receive data")
+            else:
+                lines.append("  ⏳ Output will be available when agent completes")
+        
+        lines.append("-" * 40)
+        lines.append("")
+        
+        # Show workflow context
+        lines.append("🗺️  WORKFLOW CONTEXT:")
+        lines.append("-" * 30)
+        
+        # Try to show other nodes in the workflow for context
+        if hasattr(self, 'model') and hasattr(self.model, 'nodes'):
+            other_nodes = [n for n_id, n in self.model.nodes.items() if n_id != node.id]
+            if other_nodes:
+                lines.append("  Other agents in this workflow:")
+                for other_node in other_nodes[:5]:  # Limit to 5 for space
+                    status_icon = {"complete": "✅", "running": "⚡", "pending": "⏸️", "error": "❌"}.get(other_node.status, "❓")
+                    lines.append(f"    {status_icon} {other_node.name} ({other_node.id})")
+                    if other_node.output_summary:
+                        summary_preview = other_node.output_summary[:60] + "..." if len(other_node.output_summary) > 60 else other_node.output_summary
+                        lines.append(f"       Output: {summary_preview}")
+        
+        lines.append("-" * 30)
+        lines.append("")
+        
+        # Debugging information
+        lines.append("🔍 DEBUG INFO:")
+        lines.append("-" * 20)
+        lines.append(f"  Node ID: {node.id}")
+        lines.append(f"  Status: {node.status}")
+        if hasattr(node, 'inputs'):
+            lines.append(f"  Input keys: {list(node.inputs.keys()) if node.inputs else 'None'}")
+        lines.append(f"  Has output: {'Yes' if node.output_summary else 'No'}")
+        lines.append("-" * 20)
+        
+        if not any([node.output_summary, has_inputs]):
+            lines.extend(["", "💡 TROUBLESHOOTING:", 
+                         "• Agent outputs may not be properly captured",
+                         "• Check the 'Output' tab for raw agent responses",
+                         "• Ensure agents are producing structured outputs",
+                         "• Verify workflow node connections"])
+        
+        return "\n".join(lines)
+    
+    def _render_output_tab(self, node: NodeState) -> str:
+        """Render the Output tab with enhanced developer information."""
+        lines = ["🎯 === AGENT OUTPUT === 🎯", ""]
+        
+        # FINAL AGENT OUTPUT - Most prominent section
+        if node.output_summary:
+            lines.append("🏆 FINAL AGENT OUTPUT:")
+            lines.append("=" * 50)
+            lines.append(node.output_summary)
+            lines.append("=" * 50)
+            lines.append("")
+        
+        # Agent response chunks and logs (this contains the actual LLM responses)
+        if node.logs:
+            # Filter for output-related logs
+            output_logs = [log for log in node.logs if any(marker in log for marker in ["🎯 FINAL OUTPUT:", "🏁 AGENT COMPLETED:", "✅ OUTPUT:", "🧠 AGENT:"])]
+            
+            if output_logs:
+                lines.append("📄 Agent Response History:")
+                lines.append("-" * 40)
+                for i, log in enumerate(output_logs):
+                    lines.append(f"[{i+1}] {log}")
+                    if i < len(output_logs) - 1:
+                        lines.append("")
+                lines.append("-" * 40)
+                lines.append("")
+            
+            # Show all recent logs for debugging
+            lines.append("🔍 All Recent Agent Activity:")
+            lines.append("-" * 30)
+            recent_logs = list(node.logs)[-8:]  # Last 8 log entries
+            for i, log in enumerate(recent_logs):
+                lines.append(f"  {log}")
+            lines.append("-" * 30)
             lines.append("")
         
         # Show blackboard/context data if available
@@ -764,6 +998,73 @@ class ProfessionalUrwidTUI:
         
         return "\n".join(lines)
     
+    def _render_system_logs_tab(self) -> str:
+        """Render the system logs in the inspector panel."""
+        lines = ["=== SYSTEM LOGS ===", ""]
+        
+        # Get comprehensive system logs
+        logs = self.system_logger.get_recent_logs(50)
+        
+        if not logs:
+            lines.extend([
+                "No system logs available yet.",
+                "",
+                "System logs will show:",
+                "• CLI operations and workflow loading",
+                "• Orchestrator initialization and execution",
+                "• Node lifecycle events", 
+                "• Error conditions and warnings",
+                "• Component-specific activity"
+            ])
+        else:
+            # Group logs by component
+            by_component = {}
+            for log in logs:
+                if log.component not in by_component:
+                    by_component[log.component] = []
+                by_component[log.component].append(log)
+            
+            # Show component statistics
+            lines.append("📊 COMPONENT ACTIVITY:")
+            stats = self.system_logger.get_component_stats()
+            for component, stat in stats.items():
+                total = stat['total']
+                errors = stat.get('ERROR', 0)
+                warnings = stat.get('WARNING', 0)
+                lines.append(f"  {component}: {total} logs ({errors} errors, {warnings} warnings)")
+            lines.append("")
+            
+            # Show recent logs in chronological order
+            lines.append("📝 RECENT ACTIVITY:")
+            lines.append("-" * 60)
+            
+            for log in logs[-30:]:  # Show last 30 logs
+                # Format with color indicators
+                level_indicator = {
+                    'ERROR': '🔴',
+                    'WARNING': '🟡', 
+                    'INFO': '🔵',
+                    'DEBUG': '🟦',
+                    'CRITICAL': '⭕'
+                }.get(log.level.value, '⚪')
+                
+                # Format with node context if available
+                node_context = f" [{log.node_id}]" if log.node_id else ""
+                
+                # Truncate long messages for readability
+                message = log.message
+                if len(message) > 80:
+                    message = message[:77] + "..."
+                
+                lines.append(f"{level_indicator} {log.formatted_time} [{log.component}]{node_context}")
+                lines.append(f"    {message}")
+                lines.append("")
+            
+            lines.append("-" * 60)
+            lines.append(f"Showing {len(logs)} recent logs from {len(by_component)} components")
+        
+        return "\n".join(lines)
+    
     def _render_errors_tab(self, node: NodeState) -> str:
         """Render the Errors tab."""
         if node.status != "error":
@@ -789,7 +1090,9 @@ class ProfessionalUrwidTUI:
         return "\n".join(lines)
     
     def _update_ops_panels(self):
-        """Update the ops panels (metrics, logs, DAG)."""
+        """Update the ops panels (system logs, metrics, events, DAG)."""
+        # System logs are now handled in the inspector when selected from navigator
+        
         # Metrics
         lines = [
             f"Cost: ${self.model.metrics.total_cost:.4f}",
@@ -808,24 +1111,24 @@ class ProfessionalUrwidTUI:
         
         self.metrics_text.set_text("\n".join(lines))
         
-        # Logs
-        log_lines = []
+        # Events (workflow-specific events)
+        event_lines = []
         if self.model.system_events:
-            log_lines.append("System Events:")
+            event_lines.append("Workflow Events:")
             for event in list(self.model.system_events)[-4:]:
-                log_lines.append(f"• {event}")
+                event_lines.append(f"• {event}")
         
         if self.model.global_errors:
-            if log_lines:
-                log_lines.append("")
-            log_lines.append("Recent Errors:")
+            if event_lines:
+                event_lines.append("")
+            event_lines.append("Recent Errors:")
             for error in list(self.model.global_errors)[-2:]:
-                log_lines.append(f"• {error}")
+                event_lines.append(f"• {error}")
         
-        if not log_lines:
-            log_lines.append("No activity yet...")
+        if not event_lines:
+            event_lines.append("No workflow events yet...")
         
-        self.logs_text.set_text("\n".join(log_lines))
+        self.logs_text.set_text("\n".join(event_lines))
         
         # DAG Mini-map
         dag_lines = ["Workflow Graph:", ""]
@@ -859,6 +1162,66 @@ class ProfessionalUrwidTUI:
         # Update display when model changes
         self._update_display()
     
+    def _log_agent_chunk(self, node_id: str, data: dict) -> None:
+        """Log detailed agent chunk information to system logger."""
+        if not isinstance(data, dict):
+            self.system_logger.debug("agent", f"[{node_id}] Non-dict chunk: {str(data)[:100]}", node_id=node_id)
+            return
+        
+        # Log every chunk to understand what we're getting
+        self.system_logger.debug("agent", f"[{node_id}] Raw chunk: {str(data)[:200]}", node_id=node_id)
+            
+        # Extract meaningful content from different types of chunks
+        chunk_text = data.get("text", "") or data.get("message", "") or data.get("content", "") or data.get("delta", "") or data.get("data", "")
+        
+        # Detect and log different types of agent activity
+        if "tool_use" in data or "tool_call" in data:
+            tool_data = data.get("tool_call") or data.get("tool_use", {})
+            tool_name = tool_data.get("name", "unknown")
+            tool_args = str(tool_data.get("arguments", tool_data.get("args", {})))[:100]
+            self.system_logger.info("agent", f"[{node_id}] Tool call: {tool_name}({tool_args})", node_id=node_id)
+            
+        elif "tool_result" in data:
+            result = str(data["tool_result"])[:150]
+            self.system_logger.info("agent", f"[{node_id}] Tool result: {result}", node_id=node_id)
+            
+        elif "step" in data:
+            step_info = data["step"]
+            self.system_logger.info("agent", f"[{node_id}] Step: {step_info}", node_id=node_id)
+            
+        elif "output" in data:
+            output = str(data["output"])
+            self.system_logger.info("agent", f"[{node_id}] Output: {output}", node_id=node_id)
+            
+        else:
+            # Check for thinking content using XML tag parsing
+            from ..orchestrator.thinking_parser import extract_thinking_content, format_thinking_for_display
+            
+            thinking_content = extract_thinking_content(chunk_text)
+            if thinking_content:
+                # Found structured thinking content
+                formatted_thinking = format_thinking_for_display(thinking_content, 200)
+                self.system_logger.debug("agent", f"[{node_id}] Thinking: {formatted_thinking}", node_id=node_id)
+            elif any(indicator in chunk_text.lower() for indicator in ["thinking", "reasoning", "analysis", "plan"]):
+                # Fallback to keyword-based detection
+                self.system_logger.debug("agent", f"[{node_id}] Thinking: {chunk_text[:200]}", node_id=node_id)
+            elif chunk_text.strip() and len(chunk_text) > 20:
+                # Substantial text content
+                self.system_logger.debug("agent", f"[{node_id}] Response: {chunk_text[:150]}", node_id=node_id)
+        
+        # Always log something if we have any data at all
+        if not chunk_text.strip() and data:
+            # Try to extract any meaningful info from the chunk
+            for key in ['choices', 'delta', 'response', 'completion', 'partial', 'streaming']:
+                if key in data:
+                    value = str(data[key])[:100]
+                    self.system_logger.debug("agent", f"[{node_id}] {key.title()}: {value}", node_id=node_id)
+                    break
+            else:
+                # Log the keys available in the chunk
+                keys = list(data.keys())[:5]  # First 5 keys
+                self.system_logger.debug("agent", f"[{node_id}] Chunk keys: {keys}", node_id=node_id)
+    
     def _handle_input(self, key):
         """Handle keyboard input."""
         if key == 'q':
@@ -875,13 +1238,15 @@ class ProfessionalUrwidTUI:
             self.model.toggle_redaction()
             self._update_display()
         
-        elif key == 'up' and self.selected_node_index > 0:
+        elif key == 'up' and self.selected_node_index > -1:
             self.selected_node_index -= 1
             self._update_display()
         
-        elif key == 'down' and self.selected_node_index < len(self.model.nodes) - 1:
-            self.selected_node_index += 1
-            self._update_display()
+        elif key == 'down':
+            max_index = len(self.model.nodes) - 1
+            if self.selected_node_index < max_index:
+                self.selected_node_index += 1
+                self._update_display()
         
         elif key == 'enter':
             # Refresh display
@@ -898,6 +1263,10 @@ class ProfessionalUrwidTUI:
                 event_type = event.type
                 node_id = getattr(event, 'node_id', None)
                 data = getattr(event, 'data', {})
+                
+                # Log detailed agent chunks to system logger
+                if event_type == "AGENT_CHUNK" and node_id:
+                    self._log_agent_chunk(node_id, data)
                 
                 self.model.apply_event(event_type, node_id, data)
                 
@@ -958,7 +1327,13 @@ class ProfessionalUrwidTUI:
             self._update_display()
             
             # Create asyncio-compatible urwid loop
-            evl = urwid.AsyncioEventLoop(loop=asyncio.get_event_loop())
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(current_loop)
+            
+            evl = urwid.AsyncioEventLoop(loop=current_loop)
             loop = urwid.MainLoop(
                 self.main_frame,
                 palette=self.palette,

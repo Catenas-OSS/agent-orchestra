@@ -130,7 +130,16 @@ test_checkpoints/
 test_events/
 example_graph.json
 agents.json  # Generated canonical agents file
-test_*.py    # Test scripts
+
+# Demo and development output
+output/
+website_output/
+*.db
+*.sqlite
+
+# Development files (temporary)
+dev_files/temp_*
+dev_files/*.log
 
 # macOS
 .DS_Store

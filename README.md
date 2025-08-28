@@ -39,29 +39,93 @@ run_spec = RunSpec(run_id="my_first_run", goal="A simple hello world workflow")
 executor = CallableExecutor(my_executor)
 ```
 
-### Run from the Command Line
-
-Use the `catenas` CLI to run your workflow:
+### Run Your Workflow
 
 ```bash
-catenas run my_workflow.py
+# Run with the Agent Orchestra CLI
+python -m agent_orchestra.cli_py run my_workflow.py
+
+# Or with live TUI to watch execution in real-time
+python -m agent_orchestra.cli_py run my_workflow.py --watch
 ```
 
-Or, run with a live TUI to watch the execution in real-time:
+### Quick Start with Examples
 
 ```bash
-catenas run my_workflow.py --watch
+# Try the supervisor website builder (creates a professional website!)
+python -m agent_orchestra.cli_py run examples/quickstart/supervisor_website_builder.py --watch
+
+# Or start with the basics
+python examples/quickstart/hello_world.py
 ```
 
-## Key Features
+## ✨ Key Features
 
-*   **Python-First Workflows:** Define your workflows directly in Python.
-*   **Live TUI:** A terminal-based user interface to monitor your workflows in real-time.
-*   **Extensible Executor Model:** Bring your own execution logic.
-*   **SQLite Persistence:** Automatically persist runs to a local SQLite database.
-*   **Run Management:** List, show, and tail runs from the CLI.
+### 🎭 **Multi-Agent Orchestration**
+- **Supervisor Agents**: Coordinate multiple specialists intelligently
+- **Agent Pools**: Reuse agents efficiently across workflows  
+- **MCP Integration**: Native Model Context Protocol support
+- **Real-time Streaming**: Live workflow execution with progress tracking
 
-## Development
+### 🏭 **Production-Ready**
+- **Rate Limiting & Retries**: Built-in resilience and resource management
+- **Persistent State**: SQLite-backed checkpointing and resume
+- **Comprehensive Logging**: Detailed execution traces and debugging
+- **Enterprise Features**: Policy enforcement, telemetry, observability
+
+### 🚀 **Developer Experience**  
+- **Python-First**: Define workflows directly in Python code
+- **Live TUI**: Beautiful terminal interface for monitoring
+- **Rich Examples**: From "Hello World" to complex multi-agent systems
+- **CLI Tools**: Simple commands for running and managing workflows
+
+## 📚 Examples & Learning Path
+
+### 🌟 Showcase: AI Website Builder
+Our flagship example demonstrates Agent Orchestra's full capabilities:
+
+```bash
+python -m agent_orchestra.cli_py run examples/quickstart/supervisor_website_builder.py --watch
+```
+
+**What it does**: A supervisor agent coordinates 4 specialists (UI Designer, Frontend Developer, Content Strategist, Technical Architect) to build a professional website for "Nexus Creative Studio". The result is enterprise-quality HTML, CSS, and JavaScript that would impress any client.
+
+### 📖 Learning Path
+
+1. **[Hello World](examples/quickstart/hello_world.py)** - Basic MCP setup
+2. **[Restaurant Search](examples/quickstart/restaurant_search.py)** - Single-agent workflow
+3. **[Orchestration Basics](examples/quickstart/orchestration_basics.py)** - Multi-node workflows  
+4. **[Supervisor Website Builder](examples/quickstart/supervisor_website_builder.py)** - ⭐ **Multi-agent coordination**
+5. **[Advanced Examples](examples/advanced/)** - Production patterns, streaming, persistence
+
+### 🎯 Quick Commands
+
+```bash
+# See all examples
+ls examples/quickstart/
+ls examples/advanced/
+
+# Run any example
+python -m agent_orchestra.cli_py run examples/quickstart/hello_world.py
+
+# View execution with live TUI
+python -m agent_orchestra.cli_py run examples/advanced/multi_agent_example.py --watch
+```
+
+See **[examples/README.md](examples/README.md)** for comprehensive documentation.
+
+## 🏗️ Use Cases
+
+**Agent Orchestra excels at:**
+
+- **Multi-Agent Coordination**: Supervisor agents managing specialist teams
+- **Complex Workflows**: Multi-step processes with branching and loops  
+- **Production AI Applications**: Rate limiting, retries, persistence, observability
+- **Creative Tasks**: Content generation, design, development coordination
+- **Data Processing**: Parallel processing with result aggregation
+- **Tool Integration**: Connecting multiple AI models and external APIs
+
+## 🛠️ Development
 
 ### Setup
 

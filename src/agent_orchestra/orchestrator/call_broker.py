@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Callable, Dict, Optional
 from collections import deque
 import logging
+from ..logging import get_system_logger
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class CallBroker:
     def __init__(self, model_limits: Dict[str, ModelLimits], default_limits: Optional[ModelLimits] = None):
         self.model_limits = model_limits
         self.default_limits = default_limits or ModelLimits()
+        self._system_logger = get_system_logger()
         
         # Per-model tracking
         self.rpm_counters: Dict[str, SlidingWindowCounter] = {}
@@ -99,6 +101,11 @@ class CallBroker:
         self._shutdown = False
         
         logger.info(f"CallBroker initialized with {len(model_limits)} model configurations")
+        self._system_logger.info("call_broker", f"CallBroker initialized with {len(model_limits)} model configurations")
+        
+        # Log model limits for debugging
+        for model, limits in model_limits.items():
+            self._system_logger.debug("call_broker", f"Model {model}: RPM={limits.rpm}, RPD={limits.rpd}, concurrency={limits.max_concurrency}")
     
     def _get_model_limits(self, model: str) -> ModelLimits:
         """Get rate limits for a model, falling back to defaults."""

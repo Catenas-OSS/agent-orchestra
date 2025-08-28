@@ -222,8 +222,7 @@ class AgentPool:
         for run_id in active_runs:
             await self.finish_run(run_id)
         
-        # TODO: Consider calling cleanup methods on agents if available
-        # For now, rely on Python GC and MCP client cleanup
+        # Agent cleanup is handled by Python GC and MCP client cleanup
         
         # Clear all tracking
         self._agents.clear()

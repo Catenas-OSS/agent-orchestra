@@ -6,6 +6,8 @@ Supports catenas run <workflow.py> with optional --watch TUI.
 
 from __future__ import annotations
 import asyncio
+import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -17,18 +19,36 @@ try:
     from rich.table import Table
     from rich.live import Live
 except ImportError:
-    print("CLI dependencies not installed. Run: pip install 'agentic-orchestra[cli]'")
+    print("CLI dependencies not installed. Run: pip install 'agent-orchestra[cli]'")
     sys.exit(1)
 
 from .workflow_loader import load_workflow
 from .orchestrator.core import Orchestrator
 from .orchestrator.store_factory import create_store
 from .orchestrator.types import RunSpec
-from .tui.model import RunTUIModel, NodeState
-from .tui.main import ProfessionalUrwidTUI
+from .logging import get_system_logger, init_logging
+
+# Optional TUI imports
+try:
+    from .tui.model import RunTUIModel, NodeState
+    from .tui.main import ProfessionalUrwidTUI
+    TUI_AVAILABLE = True
+except ImportError:
+    TUI_AVAILABLE = False
 
 app = typer.Typer(help="Agent Orchestra - Python-first workflow orchestration")
 console = Console()
+
+# Global flag to track if we're in TUI mode
+_tui_mode_active = False
+
+# Initialize logging system early to capture all output  
+_early_logger = None
+
+def safe_console_print(*args, **kwargs):
+    """Print to console only if not in TUI mode."""
+    if not _tui_mode_active:
+        console.print(*args, **kwargs)
 
 
 @app.command()
@@ -42,81 +62,172 @@ def run(
 ):
     """Execute a Python workflow with optional live TUI dashboard."""
     
-    log_capture = None
+    # Set global TUI mode flag
+    global _tui_mode_active
+    _tui_mode_active = watch
+    
+    # Initialize logging VERY early - before any imports or operations
+    system_logger = init_logging(tui_mode=watch)
+    if watch:
+        # In TUI mode, capture ALL output immediately
+        system_logger.enable_tui_mode()
+    
+    system_logger.info("cli", f"Starting workflow execution: {workflow.name}")
     
     try:
         # Load workflow
+        system_logger.info("cli", "Loading workflow definition")
         workflow_result = load_workflow(workflow)
         graph_spec = workflow_result.graph_spec
         run_spec = workflow_result.run_spec
         executor = workflow_result.executor
         store_instance = workflow_result.store
+        system_logger.info("cli", f"Loaded graph with {len(graph_spec.nodes)} nodes")
         
         # Override goal if provided
         if goal:
             run_spec = RunSpec(run_spec.run_id, goal)
+            system_logger.info("cli", f"Goal override: {goal}")
         
         # Handle resume
         if resume:
             run_spec = RunSpec(resume, run_spec.goal)
+            system_logger.info("cli", f"Resuming run: {resume}")
         
         # Create orchestrator
+        system_logger.info("cli", "Initializing orchestrator")
         orchestrator = Orchestrator(executor, store=store_instance)
         
         # Run with or without TUI
         if watch:
-            asyncio.run(_run_with_professional_tui(orchestrator, graph_spec, run_spec))
+            if not TUI_AVAILABLE:
+                safe_console_print("[red]TUI not available. Install with: pip install urwid rich typer[/red]")
+                safe_console_print("Running in plain mode instead...")
+                system_logger.info("cli", "TUI unavailable, falling back to plain mode")
+                asyncio.run(_run_plain(orchestrator, graph_spec, run_spec))
+            else:
+                system_logger.info("cli", "Starting TUI mode")
+                asyncio.run(_run_with_professional_tui(orchestrator, graph_spec, run_spec))
         else:
+            system_logger.info("cli", "Starting plain mode")
             asyncio.run(_run_plain(orchestrator, graph_spec, run_spec))
             
     except Exception as e:
+        system_logger.error("cli", f"Workflow execution failed: {str(e)}")
+        safe_console_print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
 
 async def _run_with_professional_tui(orchestrator, graph_spec, run_spec):
     """Run workflow with the new professional Rich-based TUI dashboard."""
     
+    if not TUI_AVAILABLE:
+        # Fallback to plain mode if TUI not available
+        await _run_plain(orchestrator, graph_spec, run_spec)
+        return
+    
+    system_logger = get_system_logger()
+    system_logger.info("tui", "Initializing TUI dashboard")
+    
     # Initialize enhanced TUI model
     model = RunTUIModel(run_spec.run_id, goal=run_spec.goal)
     
     # Add nodes from graph spec (preserve topological order)
     for node in graph_spec.nodes:
-        model.nodes[node.id] = NodeState(
+        node_state = NodeState(
             id=node.id,
             name=node.name,
-            server=getattr(node, 'server_name', None)
+            node_type=node.type,
+            server=getattr(node, 'server_name', None),
+            inputs=getattr(node, 'inputs', {})  # Capture inputs from workflow definition
         )
+        
+        # Add supervisor-specific fields if it's a supervisor node
+        if node.type == "supervisor":
+            node_state.available_agents = getattr(node, 'available_agents', {})
+            node_state.max_agent_calls = getattr(node, 'max_agent_calls', 5)
+        
+        model.nodes[node.id] = node_state
     
     # Store DAG edges for mini-map
     model.dag_edges = [(edge[0], edge[1]) for edge in graph_spec.edges]
     
     try:
         # Use new Professional Urwid TUI (truly interactive)
+        system_logger.info("tui", "Creating TUI interface")
         tui = ProfessionalUrwidTUI(orchestrator, model)
         
         # Run the Urwid TUI with streaming events
+        system_logger.info("tui", "Starting workflow execution with TUI")
         run_stream = orchestrator.run_streaming(graph_spec, run_spec)
         await tui.run(run_stream)
+        system_logger.info("tui", "TUI session completed")
             
     except KeyboardInterrupt:
-        console.print("[yellow]Interrupted by user[/yellow]")
+        system_logger.info("tui", "User interrupted TUI session")
+        # Don't print to console in TUI mode - it interferes with the interface
+        pass
     except Exception as e:
-        console.print(f"[red]TUI Error: {e}[/red]")
+        system_logger.error("tui", f"TUI error: {str(e)}")
+        # Don't print to console in TUI mode - log the error instead
+        system_logger.critical("tui", f"Critical TUI failure, falling back to plain mode: {str(e)}")
         # Fallback to plain execution
+        system_logger.info("tui", "Falling back to plain execution")
         await _run_plain(orchestrator, graph_spec, run_spec)
 
 
 async def _run_plain(orchestrator, graph_spec, run_spec):
-    """Run workflow silently (fallback behavior)."""
+    """Run workflow with basic console output."""
+    
+    safe_console_print(f"🚀 Starting workflow: {run_spec.goal}")
+    safe_console_print(f"📋 Nodes: {len(graph_spec.nodes)}")
+    safe_console_print("")
     
     try:
+        node_count = 0
         async for event in orchestrator.run_streaming(graph_spec, run_spec):
-            if event.type == "RUN_COMPLETE":
+            event_type = event.type
+            node_id = getattr(event, 'node_id', None)
+            data = getattr(event, 'data', {})
+            
+            if event_type == "RUN_START":
+                safe_console_print("▶️  Execution started")
+                
+            elif event_type == "NODE_START":
+                node_count += 1
+                node_name = next((n.name for n in graph_spec.nodes if n.id == node_id), node_id)
+                safe_console_print(f"[{node_count}/{len(graph_spec.nodes)}] 🤖 {node_name}")
+                
+            elif event_type == "AGENT_CHUNK":
+                if isinstance(data, dict) and data.get("text"):
+                    text = data["text"][:80] + ("..." if len(data["text"]) > 80 else "")
+                    safe_console_print(f"   💭 {text}")
+                    
+            elif event_type == "NODE_COMPLETE":
+                output = data.get("output_summary", "")
+                tokens = data.get("tokens", {})
+                cost = data.get("cost", 0)
+                
+                safe_console_print(f"   ✅ Completed")
+                if tokens and tokens.get("total", 0) > 0:
+                    safe_console_print(f"   📊 {tokens.get('total', 0):,} tokens | ${cost:.4f}")
+                if output:
+                    preview = output[:100] + ("..." if len(output) > 100 else "")
+                    safe_console_print(f"   🎯 {preview}")
+                safe_console_print("")
+                
+            elif event_type == "RUN_COMPLETE":
+                safe_console_print("🎉 Workflow completed!")
                 break
                 
+            elif event_type == "ERROR":
+                error = data.get("error", str(data))
+                safe_console_print(f"❌ Error: {error}")
+                
     except KeyboardInterrupt:
-        pass
+        safe_console_print("\n⏹️  Interrupted by user")
     except Exception as e:
+        safe_console_print(f"💥 Execution failed: {e}")
         raise
 
 
@@ -163,7 +274,7 @@ def _list_sqlite_runs(db: Optional[str], limit: int):
     
     db_path = Path(db or ".ao_runs/ao.sqlite3")
     if not db_path.exists():
-        console.print("[dim]No SQLite database found. Run a workflow first.[/]")
+        safe_console_print("[dim]No SQLite database found. Run a workflow first.[/]")
         return
     
     try:
@@ -178,11 +289,11 @@ def _list_sqlite_runs(db: Optional[str], limit: int):
             
             rows = cursor.fetchall()
     except Exception as e:
-        console.print(f"[red]Error reading database: {e}[/]")
+        safe_console_print(f"[red]Error reading database: {e}[/]")
         return
     
     if not rows:
-        console.print("[dim]No runs found.[/]")
+        safe_console_print("[dim]No runs found.[/]")
         return
     
     # Create table
@@ -212,14 +323,14 @@ def _list_sqlite_runs(db: Optional[str], limit: int):
             updated.split('.')[0] if updated else "-"
         )
     
-    console.print(table)
+    safe_console_print(table)
 
 
 def _list_jsonl_runs(root: Optional[str], limit: int):
     """List runs from JSONL directory."""
     root_path = Path(root or ".ao_runs")
     if not root_path.exists():
-        console.print("[dim]No JSONL runs directory found.[/]")
+        safe_console_print("[dim]No JSONL runs directory found.[/]")
         return
     
     # Get run directories sorted by modification time
@@ -234,7 +345,7 @@ def _list_jsonl_runs(root: Optional[str], limit: int):
     run_dirs = run_dirs[:limit]
     
     if not run_dirs:
-        console.print("[dim]No JSONL runs found.[/]")
+        safe_console_print("[dim]No JSONL runs found.[/]")
         return
     
     table = Table(title="Recent JSONL Runs")
@@ -252,7 +363,7 @@ def _list_jsonl_runs(root: Optional[str], limit: int):
         except Exception:
             table.add_row(run_id, "[dim]Error reading meta[/]", "-")
     
-    console.print(table)
+    safe_console_print(table)
 
 
 @app.command()
@@ -275,7 +386,7 @@ def _show_sqlite_events(run_id: str, db: Optional[str], limit: int):
     
     db_path = Path(db or ".ao_runs/ao.sqlite3")
     if not db_path.exists():
-        console.print(f"[red]Database not found: {db_path}[/]")
+        safe_console_print(f"[red]Database not found: {db_path}[/]")
         return
     
     try:
@@ -290,14 +401,14 @@ def _show_sqlite_events(run_id: str, db: Optional[str], limit: int):
             
             rows = list(reversed(cursor.fetchall()))  # Show in chronological order
     except Exception as e:
-        console.print(f"[red]Error reading events: {e}[/]")
+        safe_console_print(f"[red]Error reading events: {e}[/]")
         return
     
     if not rows:
-        console.print(f"[dim]No events found for run {run_id}[/]")
+        safe_console_print(f"[dim]No events found for run {run_id}[/]")
         return
     
-    console.print(f"[bold]Events for run: {run_id}[/]\n")
+    safe_console_print(f"[bold]Events for run: {run_id}[/]\n")
     
     for seq, event_type, node_id, data_json, timestamp in rows:
         # Parse data for display
@@ -319,21 +430,21 @@ def _show_sqlite_events(run_id: str, db: Optional[str], limit: int):
             "RUN_COMPLETE": "green bold"
         }.get(event_type, "white")
         
-        console.print(f"[dim]{seq:04d}[/] [{type_style}]{event_type}[/] {node_id or '-':15} {time_str} {data_preview}")
+        safe_console_print(f"[dim]{seq:04d}[/] [{type_style}]{event_type}[/] {node_id or '-':15} {time_str} {data_preview}")
 
 
 def _show_jsonl_events(run_id: str, limit: int):
     """Show events from JSONL files."""
     events_file = Path(".ao_runs") / run_id / "events.jsonl"
     if not events_file.exists():
-        console.print(f"[red]Events file not found: {events_file}[/]")
+        safe_console_print(f"[red]Events file not found: {events_file}[/]")
         return
     
     try:
         lines = events_file.read_text().strip().split('\n')
         lines = [line for line in lines if line.strip()][-limit:]  # Last N lines
         
-        console.print(f"[bold]Events for run: {run_id}[/]\n")
+        safe_console_print(f"[bold]Events for run: {run_id}[/]\n")
         
         for line in lines:
             try:
@@ -350,12 +461,12 @@ def _show_jsonl_events(run_id: str, limit: int):
                     "RUN_COMPLETE": "green bold"
                 }.get(event_type, "white")
                 
-                console.print(f"[{type_style}]{event_type}[/] {node_id:15} {data_preview}")
+                safe_console_print(f"[{type_style}]{event_type}[/] {node_id:15} {data_preview}")
             except Exception as e:
-                console.print(f"[dim]Invalid event: {line[:50]}...[/]")
+                safe_console_print(f"[dim]Invalid event: {line[:50]}...[/]")
                 
     except Exception as e:
-        console.print(f"[red]Error reading events file: {e}[/]")
+        safe_console_print(f"[red]Error reading events file: {e}[/]")
 
 
 def _format_event_data(data: Dict[str, Any]) -> str:
@@ -386,7 +497,7 @@ def tail(
 ):
     """Attach to an existing run and follow events with live TUI."""
     if store != "sqlite":
-        console.print("[yellow]Tail is optimized for SQLite store[/]")
+        safe_console_print("[yellow]Tail is optimized for SQLite store[/]")
         return
     
     asyncio.run(_tail_run(run_id, db, refresh))
@@ -398,7 +509,7 @@ async def _tail_run(run_id: str, db: Optional[str], refresh: float):
     
     db_path = Path(db or ".ao_runs/ao.sqlite3")
     if not db_path.exists():
-        console.print(f"[red]Database not found: {db_path}[/]")
+        safe_console_print(f"[red]Database not found: {db_path}[/]")
         return
     
     model = RunTUIModel(run_id=run_id)
@@ -462,7 +573,7 @@ async def _tail_run(run_id: str, db: Optional[str], refresh: float):
                 await asyncio.sleep(refresh)
                 
         except KeyboardInterrupt:
-            console.print("\n[yellow]Tail stopped by user[/]")
+            safe_console_print("\n[yellow]Tail stopped by user[/]")
 
 
 @app.command()
@@ -490,23 +601,22 @@ def resume(
                     cursor = conn.execute("SELECT goal FROM runs WHERE run_id = ?", (run_id,))
                     row = cursor.fetchone()
                     if not row:
-                        console.print(f"[red]Run {run_id} not found in database[/]")
+                        safe_console_print(f"[red]Run {run_id} not found in database[/]")
                         raise typer.Exit(1)
                     if row[0]:
                         goal = f"Resume: {row[0]}"
         except Exception as e:
-            console.print(f"[red]Error checking run: {e}[/]")
+            safe_console_print(f"[red]Error checking run: {e}[/]")
             raise typer.Exit(1)
     
-    # Call run function directly with resume=True
+    # Call run function directly with resume parameter
     run(
         workflow=workflow,
-        run_id=run_id,
         goal=goal,
-        resume=True,
+        resume=run_id,  # Pass run_id as resume parameter
+        watch=True,     # Default to TUI for resume
         store=store,
-        db=db,
-        root=root
+        store_path=db or root
     )
 
 
