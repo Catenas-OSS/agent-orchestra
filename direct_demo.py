@@ -7,7 +7,6 @@ import asyncio
 from pathlib import Path
 
 # Set API key
-os.environ['OPENAI_API_KEY'] = "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"
 
 # Import what we need
 import sys

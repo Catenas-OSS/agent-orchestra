@@ -6,8 +6,6 @@ import os
 import asyncio
 from pathlib import Path
 
-# Set OpenAI API key
-os.environ['OPENAI_API_KEY'] = "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"
 
 # Import the working supervisor demo
 from examples.quickstart.supervisor_website_builder import graph_spec, run_spec, executor
